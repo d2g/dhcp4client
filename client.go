@@ -133,7 +133,7 @@ func (this *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packe
 			}
 		}
 
-		if dhcp4.MessageType(acknowledgementPacketOptions[dhcp4.OptionDHCPMessageType][0]) != dhcp4.ACK || !bytes.Equal(requestPacket.XId(), acknowledgementPacket.XId()) {
+		if !bytes.Equal(requestPacket.XId(), acknowledgementPacket.XId()) || len(acknowledgementPacketOptions[dhcp4.OptionDHCPMessageType]) < 1 || (dhcp4.MessageType(acknowledgementPacketOptions[dhcp4.OptionDHCPMessageType][0]) != dhcp4.ACK && dhcp4.MessageType(acknowledgementPacketOptions[dhcp4.OptionDHCPMessageType][0]) != dhcp4.NAK) {
 			continue
 		}
 
@@ -159,7 +159,6 @@ func (this *Client) SendPacket(packet dhcp4.Packet) error {
  * Create Discover Packet
  */
 func (this *Client) DiscoverPacket() dhcp4.Packet {
-	rand.Seed(time.Now().Unix())
 	messageid := make([]byte, 4)
 	binary.LittleEndian.PutUint32(messageid, rand.Uint32())
 
@@ -199,7 +198,6 @@ func (this *Client) RequestPacket(offerPacket *dhcp4.Packet) dhcp4.Packet {
  * Create Request Packet For a Renew
  */
 func (this *Client) RenewalRequestPacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
-	rand.Seed(time.Now().Unix())
 	messageid := make([]byte, 4)
 	binary.LittleEndian.PutUint32(messageid, rand.Uint32())
 
