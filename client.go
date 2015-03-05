@@ -2,38 +2,63 @@ package dhcp4client
 
 import (
 	"bytes"
-	"encoding/binary"
-	"github.com/d2g/dhcp4"
-	//"log"
-	"math/rand"
+	"crypto/rand"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/coreos/rocket/Godeps/_workspace/src/github.com/d2g/dhcp4"
 )
 
 type Client struct {
 	MACAddress    net.HardwareAddr //The MACAddress to send in the request.
 	IgnoreServers []net.IP         //List of Servers to Ignore requests from.
 	Timeout       time.Duration    //Time before we timeout.
+	NoBcastFlag   bool             //Don't set the Bcast flag in BOOTP Flags
 
-	connection      *net.UDPConn
+	connection      sock
 	connectionMutex sync.Mutex //This is to stop us renewing as we're trying to get a normal
+}
+
+/*
+ * Abstracts the type of underlying socket used
+ */
+type sock interface {
+	Close() error
+	Send(packet []byte) error
+	RecvFrom() ([]byte, net.IP, error)
+	SetReadTimeout(t time.Duration) error
 }
 
 /*
  * Connect Setup Connections to be used by other functions :D
  */
 func (this *Client) Connect() error {
-	var err error
-
 	if this.connection == nil {
-		address := net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 68}
-		this.connection, err = net.ListenUDP("udp4", &address)
+		c, err := NewInetSock()
 
 		if err != nil {
 			return err
 		}
+
+		this.connection = c
 	}
+	return nil
+}
+
+/*
+ * ConnectPacket is like Connect but uses AF_PACKET socket
+ */
+func (this *Client) ConnectPacket(ifindex int) error {
+	if this.connection == nil {
+		c, err := NewPacketSock(ifindex)
+		if err != nil {
+			return err
+		}
+
+		this.connection = c
+	}
+
 	return nil
 }
 
@@ -62,12 +87,9 @@ func (this *Client) SendDiscoverPacket() (dhcp4.Packet, error) {
  * Wait for the offer for a specific Discovery Packet.
  */
 func (this *Client) GetOffer(discoverPacket *dhcp4.Packet) (dhcp4.Packet, error) {
-
-	readBuffer := make([]byte, 576)
-
 	for {
-		this.connection.SetReadDeadline(time.Now().Add(this.Timeout))
-		_, source, err := this.connection.ReadFromUDP(readBuffer)
+		this.connection.SetReadTimeout(this.Timeout)
+		readBuffer, source, err := this.connection.RecvFrom()
 		if err != nil {
 			return dhcp4.Packet{}, err
 		}
@@ -77,7 +99,7 @@ func (this *Client) GetOffer(discoverPacket *dhcp4.Packet) (dhcp4.Packet, error)
 
 		// Ignore Servers in my Ignore list
 		for _, ignoreServer := range this.IgnoreServers {
-			if source.IP.Equal(ignoreServer) {
+			if source.Equal(ignoreServer) {
 				continue
 			}
 
@@ -110,11 +132,9 @@ func (this *Client) SendRequest(offerPacket *dhcp4.Packet) (dhcp4.Packet, error)
  * Wait for the offer for a specific Request Packet.
  */
 func (this *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, error) {
-	readBuffer := make([]byte, 576)
-
 	for {
-		this.connection.SetReadDeadline(time.Now().Add(this.Timeout))
-		_, source, err := this.connection.ReadFromUDP(readBuffer)
+		this.connection.SetReadTimeout(this.Timeout)
+		readBuffer, source, err := this.connection.RecvFrom()
 		if err != nil {
 			return dhcp4.Packet{}, err
 		}
@@ -124,7 +144,7 @@ func (this *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packe
 
 		// Ignore Servers in my Ignore list
 		for _, ignoreServer := range this.IgnoreServers {
-			if source.IP.Equal(ignoreServer) {
+			if source.Equal(ignoreServer) {
 				continue
 			}
 
@@ -145,14 +165,7 @@ func (this *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packe
  * Send a DHCP Packet.
  */
 func (this *Client) SendPacket(packet dhcp4.Packet) error {
-	address := net.UDPAddr{IP: net.IPv4bcast, Port: 67}
-
-	_, err := this.connection.WriteToUDP(packet, &address)
-	//I Keep experencing what seems to be random "invalid argument" errors
-	//if err != nil {
-	//	log.Printf("Error:%v\n", err)
-	//}
-	return err
+	return this.connection.Send(packet)
 }
 
 /*
@@ -160,12 +173,14 @@ func (this *Client) SendPacket(packet dhcp4.Packet) error {
  */
 func (this *Client) DiscoverPacket() dhcp4.Packet {
 	messageid := make([]byte, 4)
-	binary.LittleEndian.PutUint32(messageid, rand.Uint32())
+	if _, err := rand.Read(messageid); err != nil {
+		panic(err)
+	}
 
 	packet := dhcp4.NewPacket(dhcp4.BootRequest)
 	packet.SetCHAddr(this.MACAddress)
 	packet.SetXId(messageid)
-	packet.SetBroadcast(true)
+	packet.SetBroadcast(!this.NoBcastFlag)
 
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Discover)})
 	//packet.PadToMinSize()
@@ -185,7 +200,7 @@ func (this *Client) RequestPacket(offerPacket *dhcp4.Packet) dhcp4.Packet {
 	packet.SetCIAddr(offerPacket.CIAddr())
 	packet.SetSIAddr(offerPacket.SIAddr())
 
-	packet.SetBroadcast(true)
+	packet.SetBroadcast(!this.NoBcastFlag)
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Request)})
 	packet.AddOption(dhcp4.OptionRequestedIPAddress, (offerPacket.YIAddr()).To4())
 	packet.AddOption(dhcp4.OptionServerIdentifier, offerOptions[dhcp4.OptionServerIdentifier])
@@ -199,7 +214,9 @@ func (this *Client) RequestPacket(offerPacket *dhcp4.Packet) dhcp4.Packet {
  */
 func (this *Client) RenewalRequestPacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
 	messageid := make([]byte, 4)
-	binary.LittleEndian.PutUint32(messageid, rand.Uint32())
+	if _, err := rand.Read(messageid); err != nil {
+		panic(err)
+	}
 
 	acknowledgementOptions := acknowledgement.ParseOptions()
 
@@ -210,7 +227,7 @@ func (this *Client) RenewalRequestPacket(acknowledgement *dhcp4.Packet) dhcp4.Pa
 	packet.SetCIAddr(acknowledgement.YIAddr())
 	packet.SetSIAddr(acknowledgement.SIAddr())
 
-	packet.SetBroadcast(true)
+	packet.SetBroadcast(!this.NoBcastFlag)
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Request)})
 	packet.AddOption(dhcp4.OptionRequestedIPAddress, (acknowledgement.YIAddr()).To4())
 	packet.AddOption(dhcp4.OptionServerIdentifier, acknowledgementOptions[dhcp4.OptionServerIdentifier])
