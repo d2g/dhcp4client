@@ -4,7 +4,6 @@ import (
 	"log"
 	"net"
 	"testing"
-	"time"
 )
 
 /*
@@ -12,14 +11,17 @@ import (
  */
 func Test_ExampleClient(test *testing.T) {
 	var err error
-	exampleClient := Client{}
-	exampleClient.IgnoreServers = []net.IP{}
-	exampleClient.MACAddress, err = net.ParseMAC("08-00-27-00-A8-E8")
+
+	m, err := net.ParseMAC("08-00-27-00-A8-E8")
 	if err != nil {
 		log.Printf("MAC Error:%v\n", err)
 	}
-	exampleClient.Timeout = (time.Duration(10) * time.Second)
-	exampleClient.Connect()
+
+	exampleClient, err := New(HardwareAddr(m))
+	if err != nil {
+		test.Fatalf("Error:%v\n", err)
+	}
+
 	success, acknowledgementpacket, err := exampleClient.Request()
 
 	test.Logf("Success:%v\n", success)
