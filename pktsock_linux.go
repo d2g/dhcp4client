@@ -89,10 +89,8 @@ func (pc *packetSock) ReadFrom() ([]byte, net.IP, error) {
 }
 
 func (pc *packetSock) SetReadTimeout(t time.Duration) error {
-	tv := unix.Timeval{
-		Sec:  int64(t.Seconds()),
-		Usec: t.Nanoseconds(),
-	}
+
+	tv := unix.NsecToTimeval(t.Nanoseconds())
 	return unix.SetsockoptTimeval(pc.fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &tv)
 }
 
