@@ -4,8 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"net"
-	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -29,17 +30,17 @@ type packetSock struct {
 }
 
 func NewPacketSock(ifindex int) (*packetSock, error) {
-	fd, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_DGRAM, int(swap16(syscall.ETH_P_IP)))
+	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_DGRAM, int(swap16(unix.ETH_P_IP)))
 	if err != nil {
 		return nil, err
 	}
 
-	addr := syscall.SockaddrLinklayer{
+	addr := unix.SockaddrLinklayer{
 		Ifindex:  ifindex,
-		Protocol: swap16(syscall.ETH_P_IP),
+		Protocol: swap16(unix.ETH_P_IP),
 	}
 
-	if err = syscall.Bind(fd, &addr); err != nil {
+	if err = unix.Bind(fd, &addr); err != nil {
 		return nil, err
 	}
 
@@ -50,13 +51,13 @@ func NewPacketSock(ifindex int) (*packetSock, error) {
 }
 
 func (pc *packetSock) Close() error {
-	return syscall.Close(pc.fd)
+	return unix.Close(pc.fd)
 }
 
 func (pc *packetSock) Write(packet []byte) error {
-	lladdr := syscall.SockaddrLinklayer{
+	lladdr := unix.SockaddrLinklayer{
 		Ifindex:  pc.ifindex,
-		Protocol: swap16(syscall.ETH_P_IP),
+		Protocol: swap16(unix.ETH_P_IP),
 		Halen:    uint8(len(bcastMAC)),
 	}
 	copy(lladdr.Addr[:], bcastMAC)
@@ -69,12 +70,12 @@ func (pc *packetSock) Write(packet []byte) error {
 	// payload
 	copy(pkt[minIPHdrLen+udpHdrLen:len(pkt)], packet)
 
-	return syscall.Sendto(pc.fd, pkt, 0, &lladdr)
+	return unix.Sendto(pc.fd, pkt, 0, &lladdr)
 }
 
 func (pc *packetSock) ReadFrom() ([]byte, net.IP, error) {
 	pkt := make([]byte, maxIPHdrLen+udpHdrLen+MaxDHCPLen)
-	n, _, err := syscall.Recvfrom(pc.fd, pkt, 0)
+	n, _, err := unix.Recvfrom(pc.fd, pkt, 0)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -88,11 +89,9 @@ func (pc *packetSock) ReadFrom() ([]byte, net.IP, error) {
 }
 
 func (pc *packetSock) SetReadTimeout(t time.Duration) error {
-	tv := syscall.Timeval{
-		Sec:  int64(t.Seconds()),
-		Usec: t.Nanoseconds(),
-	}
-	return syscall.SetsockoptTimeval(pc.fd, syscall.SOL_SOCKET, syscall.SO_RCVTIMEO, &tv)
+
+	tv := unix.NsecToTimeval(t.Nanoseconds())
+	return unix.SetsockoptTimeval(pc.fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &tv)
 }
 
 // compute's 1's complement checksum
@@ -125,7 +124,7 @@ func fillIPHdr(hdr []byte, payloadLen uint16) {
 	// TTL
 	hdr[8] = 16
 	// Protocol
-	hdr[9] = syscall.IPPROTO_UDP
+	hdr[9] = unix.IPPROTO_UDP
 	// dst IP
 	copy(hdr[16:20], net.IPv4bcast.To4())
 	// compute IP hdr checksum
