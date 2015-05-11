@@ -13,7 +13,7 @@ const (
 	MaxDHCPLen = 576
 )
 
-type client struct {
+type Client struct {
 	hardwareAddr  net.HardwareAddr //The HardwareAddr to send in the request.
 	ignoreServers []net.IP         //List of Servers to Ignore requests from.
 	timeout       time.Duration    //Time before we timeout.
@@ -31,8 +31,8 @@ type connection interface {
 	SetReadTimeout(t time.Duration) error
 }
 
-func New(options ...func(*client) error) (*client, error) {
-	c := client{
+func New(options ...func(*Client) error) (*Client, error) {
+	c := Client{
 		timeout:   time.Second * 10,
 		broadcast: true,
 	}
@@ -54,7 +54,7 @@ func New(options ...func(*client) error) (*client, error) {
 	return &c, nil
 }
 
-func (c *client) SetOption(options ...func(*client) error) error {
+func (c *Client) SetOption(options ...func(*Client) error) error {
 	for _, opt := range options {
 		if err := opt(c); err != nil {
 			return err
@@ -63,36 +63,36 @@ func (c *client) SetOption(options ...func(*client) error) error {
 	return nil
 }
 
-func Timeout(t time.Duration) func(*client) error {
-	return func(c *client) error {
+func Timeout(t time.Duration) func(*Client) error {
+	return func(c *Client) error {
 		c.timeout = t
 		return nil
 	}
 }
 
-func IgnoreServers(s []net.IP) func(*client) error {
-	return func(c *client) error {
+func IgnoreServers(s []net.IP) func(*Client) error {
+	return func(c *Client) error {
 		c.ignoreServers = s
 		return nil
 	}
 }
 
-func HardwareAddr(h net.HardwareAddr) func(*client) error {
-	return func(c *client) error {
+func HardwareAddr(h net.HardwareAddr) func(*Client) error {
+	return func(c *Client) error {
 		c.hardwareAddr = h
 		return nil
 	}
 }
 
-func Broadcast(b bool) func(*client) error {
-	return func(c *client) error {
+func Broadcast(b bool) func(*Client) error {
+	return func(c *Client) error {
 		c.broadcast = b
 		return nil
 	}
 }
 
-func Connection(conn connection) func(*client) error {
-	return func(c *client) error {
+func Connection(conn connection) func(*Client) error {
+	return func(c *Client) error {
 		c.connection = conn
 		return nil
 	}
@@ -101,7 +101,7 @@ func Connection(conn connection) func(*client) error {
 /*
  * Close Connections
  */
-func (c *client) Close() error {
+func (c *Client) Close() error {
 	if c.connection != nil {
 		return c.connection.Close()
 	}
@@ -111,7 +111,7 @@ func (c *client) Close() error {
 /*
  * Send the Discovery Packet to the Broadcast Channel
  */
-func (c *client) SendDiscoverPacket() (dhcp4.Packet, error) {
+func (c *Client) SendDiscoverPacket() (dhcp4.Packet, error) {
 	discoveryPacket := c.DiscoverPacket()
 	discoveryPacket.PadToMinSize()
 
@@ -122,7 +122,7 @@ func (c *client) SendDiscoverPacket() (dhcp4.Packet, error) {
  * Retreive Offer...
  * Wait for the offer for a specific Discovery Packet.
  */
-func (c *client) GetOffer(discoverPacket *dhcp4.Packet) (dhcp4.Packet, error) {
+func (c *Client) GetOffer(discoverPacket *dhcp4.Packet) (dhcp4.Packet, error) {
 	for {
 		c.connection.SetReadTimeout(c.timeout)
 		readBuffer, source, err := c.connection.ReadFrom()
@@ -156,7 +156,7 @@ func (c *client) GetOffer(discoverPacket *dhcp4.Packet) (dhcp4.Packet, error) {
 /*
  * Send Request Based On the offer Received.
  */
-func (c *client) SendRequest(offerPacket *dhcp4.Packet) (dhcp4.Packet, error) {
+func (c *Client) SendRequest(offerPacket *dhcp4.Packet) (dhcp4.Packet, error) {
 	requestPacket := c.RequestPacket(offerPacket)
 	requestPacket.PadToMinSize()
 
@@ -167,7 +167,7 @@ func (c *client) SendRequest(offerPacket *dhcp4.Packet) (dhcp4.Packet, error) {
  * Retreive Acknowledgement
  * Wait for the offer for a specific Request Packet.
  */
-func (c *client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, error) {
+func (c *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, error) {
 	for {
 		c.connection.SetReadTimeout(c.timeout)
 		readBuffer, source, err := c.connection.ReadFrom()
@@ -200,14 +200,14 @@ func (c *client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, 
 /*
  * Send a DHCP Packet.
  */
-func (c *client) SendPacket(packet dhcp4.Packet) error {
+func (c *Client) SendPacket(packet dhcp4.Packet) error {
 	return c.connection.Write(packet)
 }
 
 /*
  * Create Discover Packet
  */
-func (c *client) DiscoverPacket() dhcp4.Packet {
+func (c *Client) DiscoverPacket() dhcp4.Packet {
 	messageid := make([]byte, 4)
 	if _, err := rand.Read(messageid); err != nil {
 		panic(err)
@@ -226,7 +226,7 @@ func (c *client) DiscoverPacket() dhcp4.Packet {
 /*
  * Create Request Packet
  */
-func (c *client) RequestPacket(offerPacket *dhcp4.Packet) dhcp4.Packet {
+func (c *Client) RequestPacket(offerPacket *dhcp4.Packet) dhcp4.Packet {
 	offerOptions := offerPacket.ParseOptions()
 
 	packet := dhcp4.NewPacket(dhcp4.BootRequest)
@@ -248,7 +248,7 @@ func (c *client) RequestPacket(offerPacket *dhcp4.Packet) dhcp4.Packet {
 /*
  * Create Request Packet For a Renew
  */
-func (c *client) RenewalRequestPacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
+func (c *Client) RenewalRequestPacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
 	messageid := make([]byte, 4)
 	if _, err := rand.Read(messageid); err != nil {
 		panic(err)
@@ -275,7 +275,7 @@ func (c *client) RenewalRequestPacket(acknowledgement *dhcp4.Packet) dhcp4.Packe
 /*
  * Lets do a Full DHCP Request.
  */
-func (c *client) Request() (bool, dhcp4.Packet, error) {
+func (c *Client) Request() (bool, dhcp4.Packet, error) {
 	discoveryPacket, err := c.SendDiscoverPacket()
 	if err != nil {
 		return false, discoveryPacket, err
@@ -308,7 +308,7 @@ func (c *client) Request() (bool, dhcp4.Packet, error) {
  * Renew a lease backed on the Acknowledgement Packet.
  * Returns Sucessfull, The AcknoledgementPacket, Any Errors
  */
-func (c *client) Renew(acknowledgement dhcp4.Packet) (bool, dhcp4.Packet, error) {
+func (c *Client) Renew(acknowledgement dhcp4.Packet) (bool, dhcp4.Packet, error) {
 	renewRequest := c.RenewalRequestPacket(&acknowledgement)
 	renewRequest.PadToMinSize()
 
