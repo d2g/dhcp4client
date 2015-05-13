@@ -273,6 +273,30 @@ func (c *Client) RenewalRequestPacket(acknowledgement *dhcp4.Packet) dhcp4.Packe
 }
 
 /*
+ * Create Release Packet For a Release
+ */
+func (c *Client) ReleasePacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
+	messageid := make([]byte, 4)
+	if _, err := rand.Read(messageid); err != nil {
+		panic(err)
+	}
+
+	acknowledgementOptions := acknowledgement.ParseOptions()
+
+	packet := dhcp4.NewPacket(dhcp4.BootRequest)
+	packet.SetCHAddr(acknowledgement.CHAddr())
+
+	packet.SetXId(messageid)
+	packet.SetCIAddr(acknowledgement.YIAddr())
+
+	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Release)})
+	packet.AddOption(dhcp4.OptionServerIdentifier, acknowledgementOptions[dhcp4.OptionServerIdentifier])
+
+	//packet.PadToMinSize()
+	return packet
+}
+
+/*
  * Lets do a Full DHCP Request.
  */
 func (c *Client) Request() (bool, dhcp4.Packet, error) {
@@ -328,4 +352,15 @@ func (c *Client) Renew(acknowledgement dhcp4.Packet) (bool, dhcp4.Packet, error)
 	}
 
 	return true, newAcknowledgement, nil
+}
+
+/*
+ * Release a lease backed on the Acknowledgement Packet.
+ * Returns Any Errors
+ */
+func (c *Client) Release(acknowledgement dhcp4.Packet) error {
+	release := c.ReleasePacket(&acknowledgement)
+	release.PadToMinSize()
+
+	return c.SendPacket(release)
 }
