@@ -17,7 +17,14 @@ func Test_ExampleClient(test *testing.T) {
 		log.Printf("MAC Error:%v\n", err)
 	}
 
-	exampleClient, err := New(HardwareAddr(m))
+	//Create a connection to use
+	//We need to set the connection ports to 1068 and 1067 so we don't need root access
+	c, err := NewInetSock(SetLocalAddr(net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 1068}), SetRemoteAddr(net.UDPAddr{IP: net.IPv4bcast, Port: 1067}))
+	if err != nil {
+		test.Error("Client Conection Generation:" + err.Error())
+	}
+
+	exampleClient, err := New(HardwareAddr(m), Connection(c))
 	if err != nil {
 		test.Fatalf("Error:%v\n", err)
 	}
