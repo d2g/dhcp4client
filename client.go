@@ -341,7 +341,7 @@ func (c *Client) Renew(acknowledgement dhcp4.Packet) (bool, dhcp4.Packet, error)
 		return false, renewRequest, err
 	}
 
-	newAcknowledgement, err := c.GetAcknowledgement(&acknowledgement)
+	newAcknowledgement, err := c.GetAcknowledgement(&renewRequest)
 	if err != nil {
 		return false, newAcknowledgement, err
 	}
