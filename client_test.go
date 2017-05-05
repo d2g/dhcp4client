@@ -21,7 +21,7 @@ func Test_ExampleClient(test *testing.T) {
 	//We need to set the connection ports to 1068 and 1067 so we don't need root access
 	c, err := NewInetSock(SetLocalAddr(net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 1068}), SetRemoteAddr(net.UDPAddr{IP: net.IPv4bcast, Port: 1067}))
 	if err != nil {
-		test.Error("Client Conection Generation:" + err.Error())
+		test.Error("Client Connection Generation:" + err.Error())
 	}
 
 	exampleClient, err := New(HardwareAddr(m), Connection(c))
