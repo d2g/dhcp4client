@@ -198,6 +198,16 @@ func (c *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, 
 }
 
 /*
+ * Send Decline to the received acknowledgement.
+ */
+func (c *Client) SendDecline(acknowledgementPacket *dhcp4.Packet) (dhcp4.Packet, error) {
+	declinePacket := c.DeclinePacket(acknowledgementPacket)
+	declinePacket.PadToMinSize()
+
+	return declinePacket, c.SendPacket(declinePacket)
+}
+
+/*
  * Send a DHCP Packet.
  */
 func (c *Client) SendPacket(packet dhcp4.Packet) error {
@@ -290,6 +300,29 @@ func (c *Client) ReleasePacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
 	packet.SetCIAddr(acknowledgement.YIAddr())
 
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Release)})
+	packet.AddOption(dhcp4.OptionServerIdentifier, acknowledgementOptions[dhcp4.OptionServerIdentifier])
+
+	//packet.PadToMinSize()
+	return packet
+}
+
+/*
+ * Create Decline Packet
+ */
+func (c *Client) DeclinePacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
+	messageid := make([]byte, 4)
+	if _, err := rand.Read(messageid); err != nil {
+		panic(err)
+	}
+
+	acknowledgementOptions := acknowledgement.ParseOptions()
+
+	packet := dhcp4.NewPacket(dhcp4.BootRequest)
+	packet.SetCHAddr(acknowledgement.CHAddr())
+	packet.SetXId(messageid)
+
+	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Decline)})
+	packet.AddOption(dhcp4.OptionRequestedIPAddress, (acknowledgement.YIAddr()).To4())
 	packet.AddOption(dhcp4.OptionServerIdentifier, acknowledgementOptions[dhcp4.OptionServerIdentifier])
 
 	//packet.PadToMinSize()
