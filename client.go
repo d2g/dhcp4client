@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"net"
+	"syscall"
 	"time"
 
 	"github.com/d2g/dhcp4"
@@ -123,8 +124,15 @@ func (c *Client) SendDiscoverPacket() (dhcp4.Packet, error) {
  * Wait for the offer for a specific Discovery Packet.
  */
 func (c *Client) GetOffer(discoverPacket *dhcp4.Packet) (dhcp4.Packet, error) {
+	start := time.Now()
+
 	for {
-		c.connection.SetReadTimeout(c.timeout)
+		timeout := c.timeout - time.Since(start)
+		if timeout < 0 {
+			return dhcp4.Packet{}, syscall.ETIMEDOUT
+		}
+
+		c.connection.SetReadTimeout(timeout)
 		readBuffer, source, err := c.connection.ReadFrom()
 		if err != nil {
 			return dhcp4.Packet{}, err
@@ -168,8 +176,15 @@ func (c *Client) SendRequest(offerPacket *dhcp4.Packet) (dhcp4.Packet, error) {
  * Wait for the offer for a specific Request Packet.
  */
 func (c *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, error) {
+	start := time.Now()
+
 	for {
-		c.connection.SetReadTimeout(c.timeout)
+		timeout := c.timeout - time.Since(start)
+		if timeout < 0 {
+			return dhcp4.Packet{}, syscall.ETIMEDOUT
+		}
+
+		c.connection.SetReadTimeout(timeout)
 		readBuffer, source, err := c.connection.ReadFrom()
 		if err != nil {
 			return dhcp4.Packet{}, err
