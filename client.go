@@ -2,7 +2,7 @@ package dhcp4client
 
 import (
 	"bytes"
-	"crypto/rand"
+	"math/rand"
 	"net"
 	"time"
 
