@@ -54,7 +54,13 @@ func (pc *packetSock) Close() error {
 	return unix.Close(pc.fd)
 }
 
-func (pc *packetSock) Write(packet []byte) error {
+func (pc *packetSock) Write(packet []byte, dst, src net.IP) error {
+	if dst == nil {
+		dst = net.IPv4bcast
+	}
+	if src == nil {
+		src = net.IPv4zero
+	}
 	lladdr := unix.SockaddrLinklayer{
 		Ifindex:  pc.ifindex,
 		Protocol: swap16(unix.ETH_P_IP),
@@ -64,7 +70,7 @@ func (pc *packetSock) Write(packet []byte) error {
 
 	pkt := make([]byte, minIPHdrLen+udpHdrLen+len(packet))
 
-	fillIPHdr(pkt[0:minIPHdrLen], udpHdrLen+uint16(len(packet)))
+	fillIPHdr(pkt[0:minIPHdrLen], udpHdrLen+uint16(len(packet)), dst, src)
 	fillUDPHdr(pkt[minIPHdrLen:minIPHdrLen+udpHdrLen], uint16(len(packet)))
 
 	// payload
@@ -112,7 +118,7 @@ func chksum(p []byte, csum []byte) {
 	csum[1] = uint8(s >> 8)
 }
 
-func fillIPHdr(hdr []byte, payloadLen uint16) {
+func fillIPHdr(hdr []byte, payloadLen uint16, dst, src net.IP) {
 	// version + IHL
 	hdr[0] = ip4Ver | (minIPHdrLen / 4)
 	// total length
@@ -125,8 +131,10 @@ func fillIPHdr(hdr []byte, payloadLen uint16) {
 	hdr[8] = 16
 	// Protocol
 	hdr[9] = unix.IPPROTO_UDP
+	// src IP
+	copy(hdr[12:16], src.To4())
 	// dst IP
-	copy(hdr[16:20], net.IPv4bcast.To4())
+	copy(hdr[16:20], dst.To4())
 	// compute IP hdr checksum
 	chksum(hdr[0:len(hdr)], hdr[10:12])
 }

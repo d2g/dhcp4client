@@ -55,7 +55,8 @@ func SetRemoteAddr(r net.UDPAddr) func(*inetSock) error {
 	}
 }
 
-func (c *inetSock) Write(packet []byte) error {
+func (c *inetSock) Write(packet []byte, dst, src net.IP) error {
+	// unicast is not supported in this implementation
 	_, err := c.WriteToUDP(packet, &c.raddr)
 	return err
 }
@@ -65,9 +66,8 @@ func (c *inetSock) ReadFrom() ([]byte, net.IP, error) {
 	n, source, err := c.ReadFromUDP(readBuffer)
 	if source != nil {
 		return readBuffer[:n], source.IP, err
-	} else {
-		return readBuffer[:n], net.IP{}, err
 	}
+	return readBuffer[:n], net.IP{}, err
 }
 
 func (c *inetSock) SetReadTimeout(t time.Duration) error {

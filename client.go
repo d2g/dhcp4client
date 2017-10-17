@@ -24,7 +24,7 @@ type Client struct {
 //Abstracts the type of underlying socket used
 type connection interface {
 	Close() error
-	Write(packet []byte) error
+	Write(packet []byte, dst, src net.IP) error
 	ReadFrom() ([]byte, net.IP, error)
 	SetReadTimeout(t time.Duration) error
 }
@@ -117,7 +117,7 @@ func (c *Client) SendDiscoverPacket() (dhcp4.Packet, error) {
 	discoveryPacket := c.DiscoverPacket()
 	discoveryPacket.PadToMinSize()
 
-	return discoveryPacket, c.SendPacket(discoveryPacket)
+	return discoveryPacket, c.SendPacket(discoveryPacket, nil, nil)
 }
 
 //Retreive Offer...
@@ -158,7 +158,7 @@ func (c *Client) SendRequest(offerPacket *dhcp4.Packet) (dhcp4.Packet, error) {
 	requestPacket := c.RequestPacket(offerPacket)
 	requestPacket.PadToMinSize()
 
-	return requestPacket, c.SendPacket(requestPacket)
+	return requestPacket, c.SendPacket(requestPacket, nil, nil)
 }
 
 //Retreive Acknowledgement
@@ -198,12 +198,12 @@ func (c *Client) SendDecline(acknowledgementPacket *dhcp4.Packet) (dhcp4.Packet,
 	declinePacket := c.DeclinePacket(acknowledgementPacket)
 	declinePacket.PadToMinSize()
 
-	return declinePacket, c.SendPacket(declinePacket)
+	return declinePacket, c.SendPacket(declinePacket, nil, nil)
 }
 
 //Send a DHCP Packet.
-func (c *Client) SendPacket(packet dhcp4.Packet) error {
-	return c.connection.Write(packet)
+func (c *Client) SendPacket(packet dhcp4.Packet, dst, src net.IP) error {
+	return c.connection.Write(packet, dst, src)
 }
 
 //Create Discover Packet
@@ -241,7 +241,7 @@ func (c *Client) RequestPacket(offerPacket *dhcp4.Packet) dhcp4.Packet {
 }
 
 //Create Request Packet For a Renew
-func (c *Client) RenewalRequestPacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
+func (c *Client) RenewalRequestPacket(acknowledgement *dhcp4.Packet) (dhcp4.Packet, net.IP, net.IP) {
 	messageid := make([]byte, 4)
 	c.generateXID(messageid)
 
@@ -257,9 +257,11 @@ func (c *Client) RenewalRequestPacket(acknowledgement *dhcp4.Packet) dhcp4.Packe
 	packet.SetBroadcast(c.broadcast)
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Request)})
 	packet.AddOption(dhcp4.OptionRequestedIPAddress, (acknowledgement.YIAddr()).To4())
-	packet.AddOption(dhcp4.OptionServerIdentifier, acknowledgementOptions[dhcp4.OptionServerIdentifier])
 
-	return packet
+	serverIPbytes, _ := acknowledgementOptions[dhcp4.OptionServerIdentifier]
+	clientIP := acknowledgement.YIAddr()
+
+	return packet, net.IP(serverIPbytes), clientIP
 }
 
 //Create Release Packet For a Release
@@ -299,7 +301,6 @@ func (c *Client) DeclinePacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
 	return packet
 }
 
-
 //Lets do a Full DHCP Request.
 func (c *Client) Request() (bool, dhcp4.Packet, error) {
 	discoveryPacket, err := c.SendDiscoverPacket()
@@ -333,10 +334,10 @@ func (c *Client) Request() (bool, dhcp4.Packet, error) {
 //Renew a lease backed on the Acknowledgement Packet.
 //Returns Sucessfull, The AcknoledgementPacket, Any Errors
 func (c *Client) Renew(acknowledgement dhcp4.Packet) (bool, dhcp4.Packet, error) {
-	renewRequest := c.RenewalRequestPacket(&acknowledgement)
+	renewRequest, serverIP, clientIP := c.RenewalRequestPacket(&acknowledgement)
 	renewRequest.PadToMinSize()
 
-	err := c.SendPacket(renewRequest)
+	err := c.SendPacket(renewRequest, serverIP, clientIP)
 	if err != nil {
 		return false, renewRequest, err
 	}
@@ -360,5 +361,5 @@ func (c *Client) Release(acknowledgement dhcp4.Packet) error {
 	release := c.ReleasePacket(&acknowledgement)
 	release.PadToMinSize()
 
-	return c.SendPacket(release)
+	return c.SendPacket(release, nil, nil)
 }
