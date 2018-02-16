@@ -37,7 +37,7 @@ func Test_ExampleClient(test *testing.T) {
 	test.Logf("Packet:%v\n", acknowledgementpacket)
 
 	if err != nil {
-		networkError, ok := err.(*net.OpError)
+		networkError, ok := err.(net.Error)
 		if ok && networkError.Timeout() {
 			test.Log("Test Skipping as it didn't find a DHCP Server")
 			test.SkipNow()
@@ -100,7 +100,7 @@ func Test_ExampleClientWithMathGenerateXID(test *testing.T) {
 	test.Logf("Packet:%v\n", acknowledgementpacket)
 
 	if err != nil {
-		networkError, ok := err.(*net.OpError)
+		networkError, ok := err.(net.Error)
 		if ok && networkError.Timeout() {
 			test.Log("Test Skipping as it didn't find a DHCP Server")
 			test.SkipNow()

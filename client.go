@@ -2,7 +2,9 @@ package dhcp4client
 
 import (
 	"bytes"
+	"errors"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/d2g/dhcp4"
@@ -12,21 +14,120 @@ const (
 	MaxDHCPLen = 576
 )
 
+type MultiError []error
+
+func (m MultiError) Error() string {
+	var s bytes.Buffer
+
+	for _, e := range m {
+		if e != nil {
+			if s.Len() > 0 {
+				s.WriteString(" & ")
+			}
+			s.WriteString(e.Error())
+		}
+	}
+
+	return s.String()
+}
+
+type DHCP4Error struct {
+	Err         error    // Child Error
+	OpCode      int      // The DHCP option code of the action
+	Src         net.Addr // connection source
+	Dest        net.Addr // destination source
+	IsTimeout   bool     // if true, timed out; not all timeouts set this
+	IsTemporary bool     // if true, error is temporary; not all errors set this
+}
+
+func (e *DHCP4Error) Error() string {
+	if e == nil {
+		return "<nil>"
+	}
+
+	var s string
+	if e.OpCode > 0 {
+		s += "Oppcode " + strconv.Itoa(e.OpCode)
+	}
+	if e.Src != nil {
+		s += " From " + e.Src.String()
+	}
+	if e.Dest != nil {
+		s += " To " + e.Dest.String()
+	}
+	if len(s) > 0 {
+		s += ": "
+	}
+	s += e.Err.Error()
+	return s
+}
+
+func (e *DHCP4Error) Timeout() bool {
+	if e.IsTimeout {
+		return true
+	}
+
+	//Check The Child Error For Timeout
+	netErr, ok := e.Err.(net.Error)
+	if ok {
+		e.IsTimeout = netErr.Timeout()
+	}
+	return e.IsTimeout
+}
+
+func (e *DHCP4Error) Temporary() bool {
+	if e.IsTemporary {
+		return true
+	}
+
+	//Check The Child Error For Temporary error
+	netErr, ok := e.Err.(net.Error)
+	if ok {
+		e.IsTemporary = netErr.Temporary()
+	}
+
+	return e.IsTemporary
+}
+
 type Client struct {
 	hardwareAddr  net.HardwareAddr //The HardwareAddr to send in the request.
 	ignoreServers []net.IP         //List of Servers to Ignore requests from.
 	timeout       time.Duration    //Time before we timeout.
 	broadcast     bool             //Set the Bcast flag in BOOTP Flags
-	connection    connection       //The Connection Method to use
-	generateXID   func([]byte)     //Function Used to Generate a XID
+
+	connections struct {
+		broadcast Conn // Broadcast connection
+		unicast   Conn // Unicast connection
+	}
+
+	unicast     UnicastFactory //Function Used to obtain a unicast connection. Source, Destination.
+	generateXID func([]byte)   //Function Used to Generate a XID
 }
 
-//Abstracts the type of underlying socket used
-type connection interface {
+// Abstracts the type of underlying socket used
+// Altered to more closly represent the net.Conn
+// Unable to use net.Conn as only ReadFrom returns the senders address
+type Conn interface {
+	ReadFrom(b []byte) (int, net.Addr, error)
+	Write(b []byte) (int, error)
+
 	Close() error
-	Write(packet []byte) error
-	ReadFrom() ([]byte, net.IP, error)
-	SetReadTimeout(t time.Duration) error
+
+	LocalAddr() net.Addr
+	RemoteAddr() net.Addr
+
+	SetDeadline(t time.Time) error
+	SetReadDeadline(t time.Time) error
+	SetWriteDeadline(t time.Time) error
+}
+
+type UnicastFactory func(src, dest net.IP) (Conn, error)
+
+// The connection type can generate a Unicast connection from the existing
+// broadcast connection settings etc. In most instances unicast connections can
+// flow over the default inetsock connection as the client now has an IP.
+type UnicastSwitcher interface {
+	UnicastConn() UnicastFactory
 }
 
 func New(options ...func(*Client) error) (*Client, error) {
@@ -42,12 +143,19 @@ func New(options ...func(*Client) error) (*Client, error) {
 	}
 
 	//if connection hasn't been set as an option create the default.
-	if c.connection == nil {
+	if c.connections.broadcast == nil {
 		conn, err := NewInetSock()
 		if err != nil {
 			return nil, err
 		}
-		c.connection = conn
+		c.connections.broadcast = conn
+	}
+
+	if us, ok := c.connections.broadcast.(UnicastSwitcher); ok {
+		c.unicast = us.UnicastConn()
+	} else {
+		//We can't create a new inetsocket as it will start listening?
+
 	}
 
 	return &c, nil
@@ -90,9 +198,9 @@ func Broadcast(b bool) func(*Client) error {
 	}
 }
 
-func Connection(conn connection) func(*Client) error {
+func Connection(co Conn) func(*Client) error {
 	return func(c *Client) error {
-		c.connection = conn
+		c.connections.broadcast = co
 		return nil
 	}
 }
@@ -104,44 +212,76 @@ func GenerateXID(g func([]byte)) func(*Client) error {
 	}
 }
 
+func Unicast(u UnicastFactory) func(*Client) error {
+	return func(c *Client) error {
+		c.unicast = u
+		return nil
+	}
+}
+
 //Close Connections
 func (c *Client) Close() error {
-	if c.connection != nil {
-		return c.connection.Close()
+	var err MultiError
+
+	if c.connections.broadcast != nil {
+		err = append(err, c.connections.broadcast.Close())
 	}
-	return nil
+	if c.connections.unicast != nil {
+		err = append(err, c.connections.unicast.Close())
+	}
+
+	return err
+}
+
+//Returns true if any of the addresses supplied are in the ignore list
+func (c *Client) ignoreServer(srcs []net.Addr) bool {
+	for _, src := range srcs {
+		s, ok := src.(*net.IPAddr)
+
+		// Ignore Servers in my Ignore list
+		for _, ignoreServer := range c.ignoreServers {
+			if ok && s.IP.Equal(ignoreServer) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 //Send the Discovery Packet to the Broadcast Channel
-func (c *Client) SendDiscoverPacket() (dhcp4.Packet, error) {
-	discoveryPacket := c.DiscoverPacket()
+func (c *Client) SendDiscoverPacket() (discoveryPacket dhcp4.Packet, err error) {
+	discoveryPacket = c.DiscoverPacket()
 	discoveryPacket.PadToMinSize()
 
-	return discoveryPacket, c.SendPacket(discoveryPacket)
+	_, err = c.BroadcastPacket(discoveryPacket)
+	return
 }
 
 //Retreive Offer...
 //Wait for the offer for a specific Discovery Packet.
 func (c *Client) GetOffer(discoverPacket *dhcp4.Packet) (dhcp4.Packet, error) {
+	start := time.Now()
+
 	for {
-		c.connection.SetReadTimeout(c.timeout)
-		readBuffer, source, err := c.connection.ReadFrom()
+		timeout := c.timeout - time.Since(start)
+		if timeout <= 0 {
+			return dhcp4.Packet{}, &DHCP4Error{Err: errors.New("Timed Out"), Src: c.connections.broadcast.LocalAddr(), Dest: c.connections.broadcast.RemoteAddr(), IsTimeout: true, IsTemporary: true}
+		}
+
+		c.connections.broadcast.SetReadDeadline(time.Now().Add(timeout))
+
+		readBuffer := make([]byte, MaxDHCPLen)
+		_, source, err := c.connections.broadcast.ReadFrom(readBuffer)
 		if err != nil {
-			return dhcp4.Packet{}, err
+			return dhcp4.Packet{}, &DHCP4Error{Err: err, Src: c.connections.broadcast.LocalAddr(), Dest: c.connections.broadcast.RemoteAddr()}
 		}
 
 		offerPacket := dhcp4.Packet(readBuffer)
 		offerPacketOptions := offerPacket.ParseOptions()
 
 		// Ignore Servers in my Ignore list
-		for _, ignoreServer := range c.ignoreServers {
-			if source.Equal(ignoreServer) {
-				continue
-			}
-
-			if offerPacket.SIAddr().Equal(ignoreServer) {
-				continue
-			}
+		if c.ignoreServer([]net.Addr{source, &net.IPAddr{IP: offerPacket.SIAddr()}}) {
+			continue
 		}
 
 		if len(offerPacketOptions[dhcp4.OptionDHCPMessageType]) < 1 || dhcp4.MessageType(offerPacketOptions[dhcp4.OptionDHCPMessageType][0]) != dhcp4.Offer || !bytes.Equal(discoverPacket.XId(), offerPacket.XId()) {
@@ -154,19 +294,32 @@ func (c *Client) GetOffer(discoverPacket *dhcp4.Packet) (dhcp4.Packet, error) {
 }
 
 //Send Request Based On the offer Received.
-func (c *Client) SendRequest(offerPacket *dhcp4.Packet) (dhcp4.Packet, error) {
-	requestPacket := c.RequestPacket(offerPacket)
+func (c *Client) SendRequest(offerPacket *dhcp4.Packet) (requestPacket dhcp4.Packet, err error) {
+	requestPacket = c.RequestPacket(offerPacket)
 	requestPacket.PadToMinSize()
 
-	return requestPacket, c.SendPacket(requestPacket)
+	_, err = c.BroadcastPacket(requestPacket)
+	return
 }
 
-//Retreive Acknowledgement
-//Wait for the offer for a specific Request Packet.
+// Retrieve Acknowledgement
+// Wait for the offer for a specific Request Packet.
 func (c *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, error) {
+	start := time.Now()
+
 	for {
-		c.connection.SetReadTimeout(c.timeout)
-		readBuffer, source, err := c.connection.ReadFrom()
+		timeout := c.timeout - time.Since(start)
+		if timeout <= 0 {
+			return dhcp4.Packet{}, &DHCP4Error{Err: errors.New("Timed Out"), Src: c.connections.broadcast.LocalAddr(), Dest: c.connections.broadcast.RemoteAddr(), IsTimeout: true, IsTemporary: true}
+		}
+
+		err := c.connections.broadcast.SetReadDeadline(time.Now().Add(timeout))
+		if err != nil {
+			return dhcp4.Packet{}, err
+		}
+
+		readBuffer := make([]byte, MaxDHCPLen)
+		_, source, err := c.connections.broadcast.ReadFrom(readBuffer)
 		if err != nil {
 			return dhcp4.Packet{}, err
 		}
@@ -175,14 +328,8 @@ func (c *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, 
 		acknowledgementPacketOptions := acknowledgementPacket.ParseOptions()
 
 		// Ignore Servers in my Ignore list
-		for _, ignoreServer := range c.ignoreServers {
-			if source.Equal(ignoreServer) {
-				continue
-			}
-
-			if acknowledgementPacket.SIAddr().Equal(ignoreServer) {
-				continue
-			}
+		if c.ignoreServer([]net.Addr{source, &net.IPAddr{IP: acknowledgementPacket.SIAddr()}}) {
+			continue
 		}
 
 		if !bytes.Equal(requestPacket.XId(), acknowledgementPacket.XId()) || len(acknowledgementPacketOptions[dhcp4.OptionDHCPMessageType]) < 1 || (dhcp4.MessageType(acknowledgementPacketOptions[dhcp4.OptionDHCPMessageType][0]) != dhcp4.ACK && dhcp4.MessageType(acknowledgementPacketOptions[dhcp4.OptionDHCPMessageType][0]) != dhcp4.NAK) {
@@ -193,17 +340,62 @@ func (c *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, 
 	}
 }
 
-//Send Decline to the received acknowledgement.
-func (c *Client) SendDecline(acknowledgementPacket *dhcp4.Packet) (dhcp4.Packet, error) {
-	declinePacket := c.DeclinePacket(acknowledgementPacket)
+// Send Decline to the received acknowledgement.
+func (c *Client) SendDecline(acknowledgementPacket *dhcp4.Packet) (declinePacket dhcp4.Packet, err error) {
+	declinePacket = c.DeclinePacket(acknowledgementPacket)
 	declinePacket.PadToMinSize()
 
-	return declinePacket, c.SendPacket(declinePacket)
+	_, err = c.BroadcastPacket(declinePacket)
+	return
 }
 
-//Send a DHCP Packet.
-func (c *Client) SendPacket(packet dhcp4.Packet) error {
-	return c.connection.Write(packet)
+// Deprecated, Use BroadcastPacket - Sends a DHCP Packet via the broadcast.
+func (c *Client) SendPacket(packet dhcp4.Packet) (err error) {
+	_, err = c.connections.broadcast.Write(packet)
+	return
+}
+
+func (c *Client) BroadcastPacket(packet dhcp4.Packet) (i int, err error) {
+
+	err = c.connections.broadcast.SetWriteDeadline(time.Now().Add(c.timeout))
+	if err != nil {
+		return
+	}
+
+	i, err = c.connections.broadcast.Write(packet)
+	return
+}
+
+func (c *Client) UnicastPacket(packet dhcp4.Packet) (i int, err error) {
+	ncr := true
+
+	if c.connections.unicast != nil {
+		laddr, lok := c.connections.unicast.LocalAddr().(*net.IPAddr)
+		raddr, rok := c.connections.unicast.RemoteAddr().(*net.IPAddr)
+
+		if lok && rok && laddr.IP.Equal(packet.CIAddr()) && raddr.IP.Equal(packet.SIAddr()) {
+			ncr = false
+		}
+
+		if ncr {
+			c.connections.unicast.Close()
+		}
+	}
+
+	if ncr {
+		c.connections.unicast, err = c.unicast(packet.CIAddr(), packet.SIAddr())
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	err = c.connections.unicast.SetWriteDeadline(time.Now().Add(c.timeout))
+	if err != nil {
+		return
+	}
+
+	i, err = c.connections.unicast.Write(packet)
+	return
 }
 
 //Create Discover Packet
@@ -217,7 +409,6 @@ func (c *Client) DiscoverPacket() dhcp4.Packet {
 	packet.SetBroadcast(c.broadcast)
 
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Discover)})
-	//packet.PadToMinSize()
 	return packet
 }
 
@@ -299,7 +490,6 @@ func (c *Client) DeclinePacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
 	return packet
 }
 
-
 //Lets do a Full DHCP Request.
 func (c *Client) Request() (bool, dhcp4.Packet, error) {
 	discoveryPacket, err := c.SendDiscoverPacket()
@@ -336,7 +526,7 @@ func (c *Client) Renew(acknowledgement dhcp4.Packet) (bool, dhcp4.Packet, error)
 	renewRequest := c.RenewalRequestPacket(&acknowledgement)
 	renewRequest.PadToMinSize()
 
-	err := c.SendPacket(renewRequest)
+	_, err := c.UnicastPacket(renewRequest)
 	if err != nil {
 		return false, renewRequest, err
 	}
@@ -360,5 +550,6 @@ func (c *Client) Release(acknowledgement dhcp4.Packet) error {
 	release := c.ReleasePacket(&acknowledgement)
 	release.PadToMinSize()
 
-	return c.SendPacket(release)
+	_, err := c.UnicastPacket(release)
+	return err
 }

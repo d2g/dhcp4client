@@ -2,7 +2,6 @@ package dhcp4client
 
 import (
 	"net"
-	"time"
 )
 
 type inetSock struct {
@@ -29,6 +28,7 @@ func NewInetSock(options ...func(*inetSock) error) (*inetSock, error) {
 	}
 
 	c.UDPConn = conn
+
 	return c, err
 }
 
@@ -55,21 +55,29 @@ func SetRemoteAddr(r net.UDPAddr) func(*inetSock) error {
 	}
 }
 
-func (c *inetSock) Write(packet []byte) error {
-	_, err := c.WriteToUDP(packet, &c.raddr)
-	return err
+func (c *inetSock) Write(packet []byte) (int, error) {
+	n, err := c.WriteToUDP(packet, &c.raddr)
+	return n, err
 }
 
-func (c *inetSock) ReadFrom() ([]byte, net.IP, error) {
-	readBuffer := make([]byte, MaxDHCPLen)
-	n, source, err := c.ReadFromUDP(readBuffer)
-	if source != nil {
-		return readBuffer[:n], source.IP, err
-	} else {
-		return readBuffer[:n], net.IP{}, err
+func (c *inetSock) ReadFrom(b []byte) (int, net.Addr, error) {
+	return c.ReadFromUDP(b)
+}
+
+// UnicastFactory funcation
+func (c *inetSock) UnicastConn() UnicastFactory {
+	return func(src, dest net.IP) (Conn, error) {
+		//Work out the UDP addresses from the IP provided and the ports in the current connection.
+		laddr := net.UDPAddr{
+			IP:   src,
+			Port: c.laddr.Port,
+		}
+
+		raddr := net.UDPAddr{
+			IP:   dest,
+			Port: c.raddr.Port,
+		}
+
+		return NewInetSock(SetLocalAddr(laddr), SetRemoteAddr(raddr))
 	}
-}
-
-func (c *inetSock) SetReadTimeout(t time.Duration) error {
-	return c.SetReadDeadline(time.Now().Add(t))
 }
