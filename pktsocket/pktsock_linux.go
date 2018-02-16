@@ -152,19 +152,19 @@ func (pc *PacketSock) Write(packet []byte) (int, error) {
 }
 
 func (pc *PacketSock) ReadFrom(b []byte) (int, net.Addr, error) {
-	pkt := make([]byte, maxIPHdrLen+udpHdrLen+MaxDHCPLen)
+	pkt := make([]byte, maxIPHdrLen+udpHdrLen+len(b))
 	n, _, err := unix.Recvfrom(pc.fd, pkt, 0)
 	if err != nil {
-		return nil, nil, err
+		return 0, nil, err
 	}
 
 	// IP hdr len
 	ihl := int(pkt[0]&0x0F) * 4
 	// Source IP address
-	src := net.IPAddr{IP: hdr[12:16]}
+	src := net.IPAddr{IP: pkt[12:16]}
 
 	// TODO is there a better way of doing this without a copy?
-	copy(b, pkt[ihl+udpHdrLen:n:MaxDHCPLen])
+	copy(b, pkt[ihl+udpHdrLen:n:len(b)])
 
 	return (n - (ihl + udpHdrLen)), &src, nil
 }
