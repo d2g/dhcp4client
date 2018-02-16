@@ -4,15 +4,15 @@ import (
 	"net"
 )
 
-type inetSock struct {
+type InetSock struct {
 	*net.UDPConn
 
 	laddr net.UDPAddr
 	raddr net.UDPAddr
 }
 
-func NewInetSock(options ...func(*inetSock) error) (*inetSock, error) {
-	c := &inetSock{
+func NewInetSock(options ...func(*InetSock) error) (*InetSock, error) {
+	c := &InetSock{
 		laddr: net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 68},
 		raddr: net.UDPAddr{IP: net.IPv4bcast, Port: 67},
 	}
@@ -32,7 +32,7 @@ func NewInetSock(options ...func(*inetSock) error) (*inetSock, error) {
 	return c, err
 }
 
-func (c *inetSock) setOption(options ...func(*inetSock) error) error {
+func (c *InetSock) setOption(options ...func(*InetSock) error) error {
 	for _, opt := range options {
 		if err := opt(c); err != nil {
 			return err
@@ -41,32 +41,32 @@ func (c *inetSock) setOption(options ...func(*inetSock) error) error {
 	return nil
 }
 
-func SetLocalAddr(l net.UDPAddr) func(*inetSock) error {
-	return func(c *inetSock) error {
+func SetLocalAddr(l net.UDPAddr) func(*InetSock) error {
+	return func(c *InetSock) error {
 		c.laddr = l
 		return nil
 	}
 }
 
-func SetRemoteAddr(r net.UDPAddr) func(*inetSock) error {
-	return func(c *inetSock) error {
+func SetRemoteAddr(r net.UDPAddr) func(*InetSock) error {
+	return func(c *InetSock) error {
 		c.raddr = r
 		return nil
 	}
 }
 
-func (c *inetSock) Write(packet []byte) (int, error) {
+func (c *InetSock) Write(packet []byte) (int, error) {
 	n, err := c.WriteToUDP(packet, &c.raddr)
 	return n, err
 }
 
-func (c *inetSock) ReadFrom(b []byte) (int, net.Addr, error) {
+func (c *InetSock) ReadFrom(b []byte) (int, net.Addr, error) {
 	return c.ReadFromUDP(b)
 }
 
 // UnicastFactory funcation
-func (c *inetSock) UnicastConn() func(src, dest net.IP) (*inetSock, error) {
-	return func(src, dest net.IP) (*inetSock, error) {
+func (c *InetSock) UnicastConn() func(src, dest net.IP) (*InetSock, error) {
+	return func(src, dest net.IP) (*InetSock, error) {
 		//Work out the UDP addresses from the IP provided and the ports in the current connection.
 		laddr := net.UDPAddr{
 			IP:   src,

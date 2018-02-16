@@ -22,7 +22,7 @@ var (
 )
 
 // abstracts AF_PACKET
-type packetSock struct {
+type PacketSock struct {
 	fd int
 
 	ifindex int
@@ -33,9 +33,9 @@ type packetSock struct {
 }
 
 //ifindex int
-func NewPacketSock(ifindex int, options ...func(*PacketSock) error) (*packetSock, error) {
+func NewPacketSock(ifindex int, options ...func(*PacketSock) error) (*PacketSock, error) {
 
-	c := &packetSock{
+	c := &PacketSock{
 		laddr:    net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 68},
 		raddr:    net.UDPAddr{IP: net.IPv4bcast, Port: 67},
 		randFunc: rand.Read,
@@ -64,7 +64,7 @@ func NewPacketSock(ifindex int, options ...func(*PacketSock) error) (*packetSock
 	return c, nil
 }
 
-func (c *packetSock) setOption(options ...func(*inetSock) error) error {
+func (c *PacketSock) setOption(options ...func(*PacketSock) error) error {
 	for _, opt := range options {
 		if err := opt(c); err != nil {
 			return err
@@ -73,15 +73,15 @@ func (c *packetSock) setOption(options ...func(*inetSock) error) error {
 	return nil
 }
 
-func SetLocalAddr(l net.UDPAddr) func(*packetSock) error {
-	return func(c *packetSock) error {
+func SetLocalAddr(l net.UDPAddr) func(*PacketSock) error {
+	return func(c *PacketSock) error {
 		c.laddr = l
 		return nil
 	}
 }
 
-func SetRemoteAddr(r net.UDPAddr) func(*packetSock) error {
-	return func(c *packetSock) error {
+func SetRemoteAddr(r net.UDPAddr) func(*PacketSock) error {
+	return func(c *PacketSock) error {
 		c.raddr = r
 		return nil
 	}
@@ -94,26 +94,26 @@ func RandFunc(f func(p []byte) (n int, err error)) func(*PacketSock) error {
 	}
 }
 
-func SetIFIndex(ifindex int) func(*packetSock) error {
-	return func(c *packetSock) error {
+func SetIFIndex(ifindex int) func(*PacketSock) error {
+	return func(c *PacketSock) error {
 		c.ifindex = ifindex
 		return nil
 	}
 }
 
-func (pc *packetSock) LocalAddr() net.Addr {
-	return pc.laddr
+func (pc *PacketSock) LocalAddr() net.Addr {
+	return &pc.laddr
 }
 
-func (pc *packetSock) RemoteAddr() net.Addr {
-	return pc.raddr
+func (pc *PacketSock) RemoteAddr() net.Addr {
+	return &pc.raddr
 }
 
-func (pc *packetSock) Close() error {
+func (pc *PacketSock) Close() error {
 	return unix.Close(pc.fd)
 }
 
-func (pc *packetSock) Write(packet []byte) (int, error) {
+func (pc *PacketSock) Write(packet []byte) (int, error) {
 	lladdr := unix.SockaddrLinklayer{
 		Ifindex:  pc.ifindex,
 		Protocol: swap16(unix.ETH_P_IP),
@@ -133,16 +133,16 @@ func (pc *packetSock) Write(packet []byte) (int, error) {
 	return 0, unix.Sendto(pc.fd, pkt, 0, &lladdr)
 }
 
-func (pc *packetSock) ReadFrom(b []bytes) (int, net.Addr, error) {
+func (pc *PacketSock) ReadFrom(b []byte) (int, net.Addr, error) {
 	hdr := make([]byte, maxIPHdrLen+udpHdrLen)
 	_, _, err := unix.Recvfrom(pc.fd, hdr, 0)
 	if err != nil {
-		return nil, nil, err
+		return 0, nil, err
 	}
 
 	n, _, err := unix.Recvfrom(pc.fd, b, 0)
 	if err != nil {
-		return nil, nil, err
+		return 0, nil, err
 	}
 
 	// IP hdr len
@@ -153,26 +153,26 @@ func (pc *packetSock) ReadFrom(b []bytes) (int, net.Addr, error) {
 	return n, src, nil
 }
 
-func (pc *packetSock) SetDeadline(t time.Time) error {
+func (pc *PacketSock) SetDeadline(t time.Time) error {
 	var err MultiError
 	err = append(err, pc.SetReadDeadline(t))
 	err = append(err, pc.SetWriteDeadline(t))
 	return err
 }
 
-func (pc *packetSock) SetReadDeadline(t time.Time) error {
+func (pc *PacketSock) SetReadDeadline(t time.Time) error {
 	remain := t.Sub(time.Now())
 	tv := unix.NsecToTimeval(remain.Nanoseconds())
 	return unix.SetsockoptTimeval(pc.fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &tv)
 }
 
-func (pc *packetSock) SetWriteDeadline(t time.Time) error {
+func (pc *PacketSock) SetWriteDeadline(t time.Time) error {
 	remain := t.Sub(time.Now())
 	tv := unix.NsecToTimeval(remain.Nanoseconds())
 	return unix.SetsockoptTimeval(pc.fd, unix.SOL_SOCKET, unix.SO_SNDTIMEO, &tv)
 }
 
-func (pc *packetSock) fillIPHdr(hdr []byte, payloadLen uint16) {
+func (pc *PacketSock) fillIPHdr(hdr []byte, payloadLen uint16) {
 	// version + IHL
 	hdr[0] = ip4Ver | (minIPHdrLen / 4)
 	// total length
@@ -193,7 +193,7 @@ func (pc *packetSock) fillIPHdr(hdr []byte, payloadLen uint16) {
 	chksum(hdr[0:len(hdr)], hdr[10:12])
 }
 
-func (pc *packetSock) fillUDPHdr(hdr []byte, payloadLen uint16) {
+func (pc *PacketSock) fillUDPHdr(hdr []byte, payloadLen uint16) {
 	// src port
 	binary.BigEndian.PutUint16(hdr[0:2], pc.laddr.Port)
 	// dest port
