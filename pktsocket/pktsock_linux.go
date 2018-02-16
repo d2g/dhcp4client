@@ -1,6 +1,7 @@
 package pktsocket
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/binary"
 	"net"
