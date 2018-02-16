@@ -57,6 +57,7 @@ func NewPacketSock(ifindex int, options ...func(*PacketSock) error) (*PacketSock
 		laddr:    net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 68},
 		raddr:    net.UDPAddr{IP: net.IPv4bcast, Port: 67},
 		randFunc: rand.Read,
+		ifindex:  ifindex,
 	}
 
 	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_DGRAM, int(swap16(unix.ETH_P_IP)))
@@ -112,13 +113,6 @@ func RandFunc(f func(p []byte) (n int, err error)) func(*PacketSock) error {
 	}
 }
 
-func SetIFIndex(ifindex int) func(*PacketSock) error {
-	return func(c *PacketSock) error {
-		c.ifindex = ifindex
-		return nil
-	}
-}
-
 func (pc *PacketSock) LocalAddr() net.Addr {
 	return &pc.laddr
 }
@@ -145,7 +139,7 @@ func (pc *PacketSock) Write(packet []byte) (int, error) {
 	pc.fillUDPHdr(pkt[minIPHdrLen:minIPHdrLen+udpHdrLen], uint16(len(packet)))
 
 	// payload
-	copy(pkt[minIPHdrLen+udpHdrLen:len(pkt)], packet)
+	copy(pkt[minIPHdrLen+udpHdrLen:], packet)
 
 	// TODO Look at how to return the correct length written.
 	return 0, unix.Sendto(pc.fd, pkt, 0, &lladdr)
@@ -206,7 +200,7 @@ func (pc *PacketSock) fillIPHdr(hdr []byte, payloadLen uint16) {
 	// dst IP
 	copy(hdr[16:20], pc.raddr.IP.To4())
 	// compute IP hdr checksum
-	chksum(hdr[0:len(hdr)], hdr[10:12])
+	chksum(hdr[0:], hdr[10:12])
 }
 
 func (pc *PacketSock) fillUDPHdr(hdr []byte, payloadLen uint16) {
