@@ -32,6 +32,23 @@ type PacketSock struct {
 	randFunc func(p []byte) (n int, err error)
 }
 
+type MultiError []error
+
+func (m MultiError) Error() string {
+	var s bytes.Buffer
+
+	for _, e := range m {
+		if e != nil {
+			if s.Len() > 0 {
+				s.WriteString(" & ")
+			}
+			s.WriteString(e.Error())
+		}
+	}
+
+	return s.String()
+}
+
 //ifindex int
 func NewPacketSock(ifindex int, options ...func(*PacketSock) error) (*PacketSock, error) {
 
@@ -150,7 +167,7 @@ func (pc *PacketSock) ReadFrom(b []byte) (int, net.Addr, error) {
 	// Source IP address
 	src := net.IPAddr{IP: hdr[12:16]}
 
-	return n, src, nil
+	return n, &src, nil
 }
 
 func (pc *PacketSock) SetDeadline(t time.Time) error {
@@ -195,9 +212,9 @@ func (pc *PacketSock) fillIPHdr(hdr []byte, payloadLen uint16) {
 
 func (pc *PacketSock) fillUDPHdr(hdr []byte, payloadLen uint16) {
 	// src port
-	binary.BigEndian.PutUint16(hdr[0:2], pc.laddr.Port)
+	binary.BigEndian.PutUint16(hdr[0:2], uint16(pc.laddr.Port))
 	// dest port
-	binary.BigEndian.PutUint16(hdr[2:4], pc.raddr.Port)
+	binary.BigEndian.PutUint16(hdr[2:4], uint16(pc.raddr.Port))
 	// length
 	binary.BigEndian.PutUint16(hdr[4:6], udpHdrLen+payloadLen)
 }
