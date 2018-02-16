@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/d2g/dhcp4client"
+	"github.com/d2g/dhcp4client/inetsocket"
 )
 
 //Example Client
@@ -19,7 +20,7 @@ func Test_ExampleClient(test *testing.T) {
 
 	//Create a connection to use
 	//We need to set the connection ports to 1068 and 1067 so we don't need root access
-	c, err := dhcp4client.NewInetSock(dhcp4client.SetLocalAddr(net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 1068}), dhcp4client.SetRemoteAddr(net.UDPAddr{IP: net.IPv4bcast, Port: 1067}))
+	c, err := inetsocket.NewInetSock(inetsocket.SetLocalAddr(net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 1068}), inetsocket.SetRemoteAddr(net.UDPAddr{IP: net.IPv4bcast, Port: 1067}))
 	if err != nil {
 		test.Error("Client Connection Generation:" + err.Error())
 	}
@@ -81,7 +82,7 @@ func Test_ExampleClientWithMathGenerateXID(test *testing.T) {
 
 	//Create a connection to use
 	//We need to set the connection ports to 1068 and 1067 so we don't need root access
-	c, err := dhcp4client.NewInetSock(dhcp4client.SetLocalAddr(net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 1068}), dhcp4client.SetRemoteAddr(net.UDPAddr{IP: net.IPv4bcast, Port: 1067}))
+	c, err := inetsocket.NewInetSock(inetsocket.SetLocalAddr(net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 1068}), inetsocket.SetRemoteAddr(net.UDPAddr{IP: net.IPv4bcast, Port: 1067}))
 	if err != nil {
 		test.Error("Client Connection Generation:" + err.Error())
 	}

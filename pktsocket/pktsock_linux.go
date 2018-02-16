@@ -1,4 +1,4 @@
-package dhcp4client
+package pktsocket
 
 import (
 	"crypto/rand"
@@ -23,31 +23,31 @@ var (
 
 // abstracts AF_PACKET
 type packetSock struct {
-	fd      int
-	
+	fd int
+
 	ifindex int
-	laddr net.UDPAddr
-	raddr net.UDPAddr	
-	
+	laddr   net.UDPAddr
+	raddr   net.UDPAddr
+
 	randFunc func(p []byte) (n int, err error)
 }
 
 //ifindex int
 func NewPacketSock(ifindex int, options ...func(*PacketSock) error) (*packetSock, error) {
-	
+
 	c := &packetSock{
-		laddr: net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 68},
-		raddr: net.UDPAddr{IP: net.IPv4bcast, Port: 67},
+		laddr:    net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 68},
+		raddr:    net.UDPAddr{IP: net.IPv4bcast, Port: 67},
 		randFunc: rand.Read,
-	}	
-	
+	}
+
 	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_DGRAM, int(swap16(unix.ETH_P_IP)))
 	if err != nil {
 		return nil, err
 	}
 
 	//Functional Options?
-	err := c.setOption(options...)
+	err = c.setOption(options...)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (pc *packetSock) ReadFrom(b []bytes) (int, net.Addr, error) {
 	// IP hdr len
 	ihl := int(hdr[0]&0x0F) * 4
 	// Source IP address
-	src := net.IPAddr(IP:hdr[12:16])
+	src := net.IPAddr{IP: hdr[12:16]}
 
 	return n, src, nil
 }
@@ -161,13 +161,13 @@ func (pc *packetSock) SetDeadline(t time.Time) error {
 }
 
 func (pc *packetSock) SetReadDeadline(t time.Time) error {
-	remain := t.Sub(time.Now())	
+	remain := t.Sub(time.Now())
 	tv := unix.NsecToTimeval(remain.Nanoseconds())
 	return unix.SetsockoptTimeval(pc.fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &tv)
 }
 
 func (pc *packetSock) SetWriteDeadline(t time.Time) error {
-	remain := t.Sub(time.Now())	
+	remain := t.Sub(time.Now())
 	tv := unix.NsecToTimeval(remain.Nanoseconds())
 	return unix.SetsockoptTimeval(pc.fd, unix.SOL_SOCKET, unix.SO_SNDTIMEO, &tv)
 }

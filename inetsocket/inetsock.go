@@ -1,4 +1,4 @@
-package dhcp4client
+package inetsocket
 
 import (
 	"net"
@@ -65,8 +65,8 @@ func (c *inetSock) ReadFrom(b []byte) (int, net.Addr, error) {
 }
 
 // UnicastFactory funcation
-func (c *inetSock) UnicastConn() UnicastFactory {
-	return func(src, dest net.IP) (Conn, error) {
+func (c *inetSock) UnicastConn() func(src, dest net.IP) (*inetSock, error) {
+	return func(src, dest net.IP) (*inetSock, error) {
 		//Work out the UDP addresses from the IP provided and the ports in the current connection.
 		laddr := net.UDPAddr{
 			IP:   src,

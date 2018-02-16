@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/d2g/dhcp4"
+	"github.com/d2g/dhcp4client/inetsocket"
 )
 
 const (
@@ -144,7 +145,7 @@ func New(options ...func(*Client) error) (*Client, error) {
 
 	//if connection hasn't been set as an option create the default.
 	if c.connections.broadcast == nil {
-		conn, err := NewInetSock()
+		conn, err := inetsocket.NewInetSock()
 		if err != nil {
 			return nil, err
 		}
