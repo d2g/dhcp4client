@@ -5,6 +5,7 @@ import (
 	"net"
 	"testing"
 
+	"github.com/d2g/dhcp"
 	"github.com/d2g/dhcp4client"
 	"github.com/d2g/dhcp4client/pktsocket"
 )
@@ -31,6 +32,8 @@ func Test_ExampleLinuxClient(test *testing.T) {
 	}
 	defer exampleClient.Close()
 
+	success = false
+
 	discoveryPacket, err := exampleClient.SendDiscoverPacket()
 	test.Logf("Discovery:%v\n", discoveryPacket)
 
@@ -53,9 +56,11 @@ func Test_ExampleLinuxClient(test *testing.T) {
 		test.Fatalf("Get Ack Error:%v\n", err)
 	}
 
-	acknowledgementOptions := acknowledgement.ParseOptions()
+	acknowledgementOptions := acknowledgementpacket.ParseOptions()
 	if dhcp4.MessageType(acknowledgementOptions[dhcp4.OptionDHCPMessageType][0]) != dhcp4.ACK {
 		test.Fatalf("Not Acknoledged")
+	} else {
+		success = true
 	}
 
 	test.Logf("Packet:%v\n", acknowledgementpacket)
@@ -76,7 +81,7 @@ func Test_ExampleLinuxClient(test *testing.T) {
 	}
 
 	test.Log("Start Renewing Lease")
-	success, acknowledgementpacket, err = exampleClient.Renew(acknowledgementpacket)
+	success, acknowledgementpacket, err := exampleClient.Renew(acknowledgementpacket)
 	if err != nil {
 		networkError, ok := err.(*net.OpError)
 		if ok && networkError.Timeout() {
