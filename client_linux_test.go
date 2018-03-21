@@ -31,9 +31,33 @@ func Test_ExampleLinuxClient(test *testing.T) {
 	}
 	defer exampleClient.Close()
 
-	success, acknowledgementpacket, err := exampleClient.Request()
+	discoveryPacket, err := exampleClient.SendDiscoverPacket()
+	test.Logf("Discovery:%v\n", discoveryPacket)
 
-	test.Logf("Success:%v\n", success)
+	if err != nil {
+		test.Fatalf("Discovery Error:%v\n", err)
+	}
+
+	offerPacket, err := exampleClient.GetOffer(&discoveryPacket)
+	if err != nil {
+		test.Fatalf("Offer Error:%v\n", err)
+	}
+
+	requestPacket, err := exampleClient.SendRequest(&offerPacket)
+	if err != nil {
+		test.Fatalf("Send Offer Error:%v\n", err)
+	}
+
+	acknowledgementpacket, err := exampleClient.GetAcknowledgement(&requestPacket)
+	if err != nil {
+		test.Fatalf("Get Ack Error:%v\n", err)
+	}
+
+	acknowledgementOptions := acknowledgement.ParseOptions()
+	if dhcp4.MessageType(acknowledgementOptions[dhcp4.OptionDHCPMessageType][0]) != dhcp4.ACK {
+		test.Fatalf("Not Acknoledged")
+	}
+
 	test.Logf("Packet:%v\n", acknowledgementpacket)
 
 	if err != nil {
