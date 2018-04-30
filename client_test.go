@@ -33,7 +33,6 @@ func Test_ExampleClient(test *testing.T) {
 	defer exampleClient.Close()
 
 	success, acknowledgementpacket, err := exampleClient.Request()
-
 	test.Logf("Success:%v\n", success)
 	test.Logf("Packet:%v\n", acknowledgementpacket)
 

@@ -3,8 +3,8 @@ package dhcp4client_test
 import (
 	"log"
 	"net"
-	"testing"
 	"syscall"
+	"testing"
 
 	"github.com/d2g/dhcp4"
 	"github.com/d2g/dhcp4client"
@@ -21,7 +21,7 @@ func Test_ExampleLinuxClient(test *testing.T) {
 	}
 
 	//Create a connection to use
-	c, err := pktsocket.NewPacketSock(1)
+	c, err := pktsocket.NewPacketSock(2)
 	if err != nil {
 		test.Error("Client Connection Generation:" + err.Error())
 	}
@@ -74,15 +74,6 @@ func Test_ExampleLinuxClient(test *testing.T) {
 	}
 
 	test.Logf("Packet:%v\n", acknowledgementpacket)
-
-	if err != nil {
-		networkError, ok := err.(net.Error)
-		if ok && networkError.Timeout() {
-			test.Log("Test Skipping as it didn't find a DHCP Server")
-			test.SkipNow()
-		}
-		test.Fatalf("Error:%v\n", err)
-	}
 
 	if !success {
 		test.Error("We didn't sucessfully get a DHCP Lease?")

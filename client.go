@@ -154,9 +154,6 @@ func New(options ...func(*Client) error) (*Client, error) {
 
 	if us, ok := c.connections.broadcast.(UnicastSwitcher); ok {
 		c.unicast = us.UnicastConn()
-	} else {
-		//We can't create a new inetsocket as it will start listening?
-
 	}
 
 	return &c, nil

@@ -65,6 +65,8 @@ func NewPacketSock(ifindex int, options ...func(*PacketSock) error) (*PacketSock
 		return nil, err
 	}
 
+	c.fd = fd
+
 	//Functional Options?
 	err = c.setOption(options...)
 	if err != nil {
@@ -76,7 +78,7 @@ func NewPacketSock(ifindex int, options ...func(*PacketSock) error) (*PacketSock
 		Protocol: swap16(unix.ETH_P_IP),
 	}
 
-	if err = unix.Bind(fd, &addr); err != nil {
+	if err = unix.Bind(c.fd, &addr); err != nil {
 		return nil, err
 	}
 
@@ -125,6 +127,7 @@ func (pc *PacketSock) Close() error {
 	return unix.Close(pc.fd)
 }
 
+// Unix.SendTo returns an error when the network is down. Which it obviously isn't an error because we're bring the network up.
 func (pc *PacketSock) Write(packet []byte) (int, error) {
 	lladdr := unix.SockaddrLinklayer{
 		Ifindex:  pc.ifindex,
@@ -234,4 +237,22 @@ func swap16(x uint16) uint16 {
 	var b [2]byte
 	binary.BigEndian.PutUint16(b[:], x)
 	return binary.LittleEndian.Uint16(b[:])
+}
+
+// UnicastFactory funcation
+func (pc *PacketSock) UnicastConn() func(src, dest net.IP) (*PacketSock, error) {
+	return func(src, dest net.IP) (*PacketSock, error) {
+		//Work out the UDP addresses from the IP provided and the ports in the current connection.
+		laddr := net.UDPAddr{
+			IP:   src,
+			Port: pc.laddr.Port,
+		}
+
+		raddr := net.UDPAddr{
+			IP:   dest,
+			Port: pc.raddr.Port,
+		}
+
+		return NewPacketSock(pc.ifindex, SetLocalAddr(laddr), SetRemoteAddr(raddr))
+	}
 }
