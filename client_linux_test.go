@@ -4,8 +4,9 @@ import (
 	"log"
 	"net"
 	"testing"
+	"syscall"
 
-	"github.com/d2g/dhcp"
+	"github.com/d2g/dhcp4"
 	"github.com/d2g/dhcp4client"
 	"github.com/d2g/dhcp4client/pktsocket"
 )
@@ -32,13 +33,22 @@ func Test_ExampleLinuxClient(test *testing.T) {
 	}
 	defer exampleClient.Close()
 
-	success = false
+	success := false
 
 	discoveryPacket, err := exampleClient.SendDiscoverPacket()
 	test.Logf("Discovery:%v\n", discoveryPacket)
 
 	if err != nil {
-		test.Fatalf("Discovery Error:%v\n", err)
+		sc, ok := err.(syscall.Errno)
+		if ok {
+			//Don't report a network down
+			if sc != syscall.ENETDOWN {
+				test.Fatalf("Discovery Error:%v\n", err)
+			}
+		} else {
+			test.Fatalf("Discovery Error:%v\n", err)
+		}
+
 	}
 
 	offerPacket, err := exampleClient.GetOffer(&discoveryPacket)
@@ -81,7 +91,7 @@ func Test_ExampleLinuxClient(test *testing.T) {
 	}
 
 	test.Log("Start Renewing Lease")
-	success, acknowledgementpacket, err := exampleClient.Renew(acknowledgementpacket)
+	success, acknowledgementpacket, err = exampleClient.Renew(acknowledgementpacket)
 	if err != nil {
 		networkError, ok := err.(*net.OpError)
 		if ok && networkError.Timeout() {
