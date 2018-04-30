@@ -154,6 +154,8 @@ func New(options ...func(*Client) error) (*Client, error) {
 
 	if us, ok := c.connections.broadcast.(UnicastSwitcher); ok {
 		c.unicast = us.UnicastConn()
+	} else {
+		c.unicast = DefaultUnicastFactory
 	}
 
 	return &c, nil
@@ -550,4 +552,8 @@ func (c *Client) Release(acknowledgement dhcp4.Packet) error {
 
 	_, err := c.UnicastPacket(release)
 	return err
+}
+
+func DefaultUnicastFactory(src, dest net.IP) (Conn, error) {
+	return inetsocket.NewInetSock(inetsocket.SetLocalAddr(net.UDPAddr{IP: src, Port: 68}), inetsocket.SetRemoteAddr(net.UDPAddr{IP: dest, Port: 67}))
 }
