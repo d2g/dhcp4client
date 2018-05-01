@@ -3,7 +3,6 @@ package dhcp4client_test
 import (
 	"log"
 	"net"
-	"syscall"
 	"testing"
 
 	"github.com/d2g/dhcp4"
@@ -39,16 +38,7 @@ func Test_ExampleLinuxClient(test *testing.T) {
 	test.Logf("Discovery:%v\n", discoveryPacket)
 
 	if err != nil {
-		sc, ok := err.(syscall.Errno)
-		if ok {
-			//Don't report a network down
-			if sc != syscall.ENETDOWN {
-				test.Fatalf("Discovery Error:%v\n", err)
-			}
-		} else {
-			test.Fatalf("Discovery Error:%v\n", err)
-		}
-
+		test.Fatalf("Discovery Error:%v\n", err)
 	}
 
 	offerPacket, err := exampleClient.GetOffer(&discoveryPacket)

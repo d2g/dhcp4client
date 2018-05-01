@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/d2g/dhcp4"
@@ -154,8 +155,6 @@ func New(options ...func(*Client) error) (*Client, error) {
 
 	if us, ok := c.connections.broadcast.(UnicastSwitcher); ok {
 		c.unicast = us.UnicastConn()
-	} else {
-		c.unicast = DefaultUnicastFactory
 	}
 
 	return &c, nil
@@ -249,12 +248,26 @@ func (c *Client) ignoreServer(srcs []net.Addr) bool {
 }
 
 //Send the Discovery Packet to the Broadcast Channel
-func (c *Client) SendDiscoverPacket() (discoveryPacket dhcp4.Packet, err error) {
-	discoveryPacket = c.DiscoverPacket()
+func (c *Client) SendDiscoverPacket() (dhcp4.Packet, error) {
+	discoveryPacket := c.DiscoverPacket()
 	discoveryPacket.PadToMinSize()
 
-	_, err = c.BroadcastPacket(discoveryPacket)
-	return
+	_, e := c.BroadcastPacket(discoveryPacket)
+	if e != nil {
+		//Ignore Network Down Errors
+		if sc, ok := e.(syscall.Errno); ok && sc == syscall.ENETDOWN {
+			return discoveryPacket, nil
+		}
+
+		err := &DHCP4Error{
+			Err:  e,
+			Src:  c.connections.broadcast.LocalAddr(),
+			Dest: c.connections.broadcast.RemoteAddr(),
+		}
+
+		return discoveryPacket, err
+	}
+	return discoveryPacket, nil
 }
 
 //Retreive Offer...
@@ -273,7 +286,10 @@ func (c *Client) GetOffer(discoverPacket *dhcp4.Packet) (dhcp4.Packet, error) {
 		readBuffer := make([]byte, MaxDHCPLen)
 		_, source, err := c.connections.broadcast.ReadFrom(readBuffer)
 		if err != nil {
-			return dhcp4.Packet{}, &DHCP4Error{Err: err, Src: c.connections.broadcast.LocalAddr(), Dest: c.connections.broadcast.RemoteAddr()}
+			//Ignore Network Down Errors
+			if sc, ok := err.(syscall.Errno); !ok || sc != syscall.ENETDOWN {
+				return dhcp4.Packet{}, &DHCP4Error{Err: err, Src: c.connections.broadcast.LocalAddr(), Dest: c.connections.broadcast.RemoteAddr()}
+			}
 		}
 
 		offerPacket := dhcp4.Packet(readBuffer)
@@ -554,6 +570,8 @@ func (c *Client) Release(acknowledgement dhcp4.Packet) error {
 	return err
 }
 
+/*
 func DefaultUnicastFactory(src, dest net.IP) (Conn, error) {
 	return inetsocket.NewInetSock(inetsocket.SetLocalAddr(net.UDPAddr{IP: src, Port: 68}), inetsocket.SetRemoteAddr(net.UDPAddr{IP: dest, Port: 67}))
 }
+*/
