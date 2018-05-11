@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/d2g/dhcp4client"
-	"github.com/d2g/dhcp4client/inetsocket"
+	"github.com/d2g/dhcp4client/connections/inetsocket"
 )
 
 //Example Client

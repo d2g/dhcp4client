@@ -2,6 +2,8 @@ package inetsocket
 
 import (
 	"net"
+
+	"github.com/d2g/dhcp4client/connections"
 )
 
 type InetSock struct {
@@ -65,19 +67,17 @@ func (c *InetSock) ReadFrom(b []byte) (int, net.Addr, error) {
 }
 
 // UnicastFactory funcation
-func (c *InetSock) UnicastConn() func(src, dest net.IP) (*InetSock, error) {
-	return func(src, dest net.IP) (*InetSock, error) {
-		//Work out the UDP addresses from the IP provided and the ports in the current connection.
-		laddr := net.UDPAddr{
-			IP:   src,
-			Port: c.laddr.Port,
-		}
-
-		raddr := net.UDPAddr{
-			IP:   dest,
-			Port: c.raddr.Port,
-		}
-
-		return NewInetSock(SetLocalAddr(laddr), SetRemoteAddr(raddr))
+func (c *InetSock) UnicastConn(src, dest net.IP) (connections.Conn, error) {
+	//Work out the UDP addresses from the IP provided and the ports in the current connection.
+	laddr := net.UDPAddr{
+		IP:   src,
+		Port: c.laddr.Port,
 	}
+
+	raddr := net.UDPAddr{
+		IP:   dest,
+		Port: c.raddr.Port,
+	}
+
+	return NewInetSock(SetLocalAddr(laddr), SetRemoteAddr(raddr))
 }

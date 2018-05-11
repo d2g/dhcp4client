@@ -1,7 +1,6 @@
 package dhcp4client_test
 
 import (
-	"log"
 	"net"
 	"testing"
 
@@ -85,7 +84,7 @@ func Test_ExampleLinuxClient(test *testing.T) {
 	if !success {
 		test.Error("We didn't sucessfully Renew a DHCP Lease?")
 	} else {
-		log.Printf("IP Received:%v\n", acknowledgementpacket.YIAddr().String())
+		test.Logf("IP Received:%v\n", acknowledgementpacket.YIAddr().String())
 	}
 
 }

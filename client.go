@@ -9,7 +9,8 @@ import (
 	"time"
 
 	"github.com/d2g/dhcp4"
-	"github.com/d2g/dhcp4client/inetsocket"
+	"github.com/d2g/dhcp4client/connections"
+	"github.com/d2g/dhcp4client/connections/inetsocket"
 )
 
 const (
@@ -98,38 +99,11 @@ type Client struct {
 	broadcast     bool             //Set the Bcast flag in BOOTP Flags
 
 	connections struct {
-		broadcast Conn // Broadcast connection
-		unicast   Conn // Unicast connection
+		broadcast connections.Conn // Broadcast connection
+		unicast   connections.Conn // Unicast connection
 	}
 
-	unicast     UnicastFactory //Function Used to obtain a unicast connection. Source, Destination.
-	generateXID func([]byte)   //Function Used to Generate a XID
-}
-
-// Abstracts the type of underlying socket used
-// Altered to more closly represent the net.Conn
-// Unable to use net.Conn as only ReadFrom returns the senders address
-type Conn interface {
-	ReadFrom(b []byte) (int, net.Addr, error)
-	Write(b []byte) (int, error)
-
-	Close() error
-
-	LocalAddr() net.Addr
-	RemoteAddr() net.Addr
-
-	SetDeadline(t time.Time) error
-	SetReadDeadline(t time.Time) error
-	SetWriteDeadline(t time.Time) error
-}
-
-type UnicastFactory func(src, dest net.IP) (Conn, error)
-
-// The connection type can generate a Unicast connection from the existing
-// broadcast connection settings etc. In most instances unicast connections can
-// flow over the default inetsock connection as the client now has an IP.
-type UnicastSwitcher interface {
-	UnicastConn() UnicastFactory
+	generateXID func([]byte) //Function Used to Generate a XID
 }
 
 func New(options ...func(*Client) error) (*Client, error) {
@@ -153,9 +127,9 @@ func New(options ...func(*Client) error) (*Client, error) {
 		c.connections.broadcast = conn
 	}
 
-	if us, ok := c.connections.broadcast.(UnicastSwitcher); ok {
-		c.unicast = us.UnicastConn()
-	}
+	//if us, ok := c.connections.broadcast.(UnicastSwitcher); ok {
+	//c.unicast = us.UnicastConn()
+	//}
 
 	return &c, nil
 }
@@ -197,7 +171,7 @@ func Broadcast(b bool) func(*Client) error {
 	}
 }
 
-func Connection(co Conn) func(*Client) error {
+func Connection(co connections.Conn) func(*Client) error {
 	return func(c *Client) error {
 		c.connections.broadcast = co
 		return nil
@@ -211,12 +185,14 @@ func GenerateXID(g func([]byte)) func(*Client) error {
 	}
 }
 
-func Unicast(u UnicastFactory) func(*Client) error {
+/*
+func Unicast(u func(src, dest net.IP) (Conn, error)) func(*Client) error {
 	return func(c *Client) error {
 		c.unicast = u
 		return nil
 	}
 }
+*/
 
 //Close Connections
 func (c *Client) Close() error {
@@ -399,7 +375,7 @@ func (c *Client) UnicastPacket(packet dhcp4.Packet) (i int, err error) {
 	}
 
 	if ncr {
-		c.connections.unicast, err = c.unicast(packet.CIAddr(), packet.SIAddr())
+		c.connections.unicast, err = c.connections.broadcast.UnicastConn(packet.CIAddr(), packet.SIAddr())
 		if err != nil {
 			return 0, err
 		}

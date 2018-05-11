@@ -7,6 +7,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/d2g/dhcp4client/connections"
 	"golang.org/x/sys/unix"
 )
 
@@ -240,7 +241,8 @@ func swap16(x uint16) uint16 {
 }
 
 // UnicastFactory funcation
-func (pc *PacketSock) UnicastConn() func(src, dest net.IP) (*PacketSock, error) {
+
+func (pc *PacketSock) UnicastConn(src, dest net.IP) (connections.Conn, error) {
 	return func(src, dest net.IP) (*PacketSock, error) {
 		//Work out the UDP addresses from the IP provided and the ports in the current connection.
 		laddr := net.UDPAddr{
