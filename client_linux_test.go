@@ -6,7 +6,7 @@ import (
 
 	"github.com/d2g/dhcp4"
 	"github.com/d2g/dhcp4client"
-	"github.com/d2g/dhcp4client/pktsocket"
+	"github.com/d2g/dhcp4client/connections/pktsocket"
 )
 
 //Example Client
