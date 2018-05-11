@@ -243,18 +243,16 @@ func swap16(x uint16) uint16 {
 // UnicastFactory funcation
 
 func (pc *PacketSock) UnicastConn(src, dest net.IP) (connections.Conn, error) {
-	return func(src, dest net.IP) (*PacketSock, error) {
-		//Work out the UDP addresses from the IP provided and the ports in the current connection.
-		laddr := net.UDPAddr{
-			IP:   src,
-			Port: pc.laddr.Port,
-		}
-
-		raddr := net.UDPAddr{
-			IP:   dest,
-			Port: pc.raddr.Port,
-		}
-
-		return NewPacketSock(pc.ifindex, SetLocalAddr(laddr), SetRemoteAddr(raddr))
+	//Work out the UDP addresses from the IP provided and the ports in the current connection.
+	laddr := net.UDPAddr{
+		IP:   src,
+		Port: pc.laddr.Port,
 	}
+
+	raddr := net.UDPAddr{
+		IP:   dest,
+		Port: pc.raddr.Port,
+	}
+
+	return NewPacketSock(pc.ifindex, SetLocalAddr(laddr), SetRemoteAddr(raddr))
 }
