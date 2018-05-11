@@ -74,7 +74,7 @@ func Test_ExampleLinuxClient(test *testing.T) {
 
 func Test_ExampleLinuxClient_Renew(test *testing.T) {
 
-	p := dhcp4.Packet{}
+	p := dhcp4.NewPacket(dhcp4.BootRequest)
 
 	m, err := net.ParseMAC("08-00-27-00-A8-E8")
 	if err != nil {
