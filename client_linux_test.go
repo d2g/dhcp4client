@@ -70,8 +70,23 @@ func Test_ExampleLinuxClient(test *testing.T) {
 		test.Logf("IP Received:%v\n", acknowledgementpacket.YIAddr().String())
 	}
 
+}
+
+func Test_ExampleLinuxClient_Renew(test *testing.T) {
+
+	p := dhcp4.Packet{}
+
+	m, err := net.ParseMAC("08-00-27-00-A8-E8")
+	if err != nil {
+		test.Logf("MAC Error:%v\n", err)
+	}
+
+	p.SetCHAddr(m)
+	p.SetCIAddr(net.IPv4(10, 0, 2, 16))
+	p.SetSIAddr(net.IPv4(10, 0, 2, 1))
+
 	test.Log("Start Renewing Lease")
-	success, acknowledgementpacket, err = exampleClient.Renew(acknowledgementpacket)
+	success, acknowledgementpacket, err := exampleClient.Renew(p)
 	if err != nil {
 		networkError, ok := err.(*net.OpError)
 		if ok && networkError.Timeout() {
@@ -86,5 +101,4 @@ func Test_ExampleLinuxClient(test *testing.T) {
 	} else {
 		test.Logf("IP Received:%v\n", acknowledgementpacket.YIAddr().String())
 	}
-
 }
