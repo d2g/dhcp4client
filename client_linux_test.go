@@ -15,7 +15,7 @@ func Test_ExampleLinuxClient(test *testing.T) {
 
 	m, err := net.ParseMAC("08-00-27-00-A8-E8")
 	if err != nil {
-		log.Printf("MAC Error:%v\n", err)
+		test.Logf("MAC Error:%v\n", err)
 	}
 
 	//Create a connection to use
@@ -67,7 +67,7 @@ func Test_ExampleLinuxClient(test *testing.T) {
 	if !success {
 		test.Error("We didn't sucessfully get a DHCP Lease?")
 	} else {
-		log.Printf("IP Received:%v\n", acknowledgementpacket.YIAddr().String())
+		test.Logf("IP Received:%v\n", acknowledgementpacket.YIAddr().String())
 	}
 
 	test.Log("Start Renewing Lease")
