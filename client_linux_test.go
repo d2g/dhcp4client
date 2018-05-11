@@ -81,6 +81,15 @@ func Test_ExampleLinuxClient_Renew(test *testing.T) {
 		test.Logf("MAC Error:%v\n", err)
 	}
 
+	//Create a connection to use
+	c, err := pktsocket.NewPacketSock(2)
+	if err != nil {
+		test.Error("Client Connection Generation:" + err.Error())
+	}
+	defer c.Close()
+
+	exampleClient, err := dhcp4client.New(dhcp4client.HardwareAddr(m), dhcp4client.Connection(c))
+
 	p.SetCHAddr(m)
 	p.SetCIAddr(net.IPv4(10, 0, 2, 16))
 	p.SetSIAddr(net.IPv4(10, 0, 2, 1))
