@@ -185,15 +185,6 @@ func GenerateXID(g func([]byte)) func(*Client) error {
 	}
 }
 
-/*
-func Unicast(u func(src, dest net.IP) (Conn, error)) func(*Client) error {
-	return func(c *Client) error {
-		c.unicast = u
-		return nil
-	}
-}
-*/
-
 //Close Connections
 func (c *Client) Close() error {
 	var err MultiError
@@ -288,6 +279,7 @@ func (c *Client) GetOffer(discoverPacket *dhcp4.Packet) (dhcp4.Packet, error) {
 //Send Request Based On the offer Received.
 func (c *Client) SendRequest(offerPacket *dhcp4.Packet) (requestPacket dhcp4.Packet, err error) {
 	requestPacket = c.RequestPacket(offerPacket)
+
 	requestPacket.PadToMinSize()
 
 	_, err = c.BroadcastPacket(requestPacket)
@@ -332,7 +324,6 @@ func (c *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, 
 	}
 }
 
-// Send Decline to the received acknowledgement.
 func (c *Client) SendDecline(acknowledgementPacket *dhcp4.Packet) (declinePacket dhcp4.Packet, err error) {
 	declinePacket = c.DeclinePacket(acknowledgementPacket)
 	declinePacket.PadToMinSize()
@@ -545,9 +536,3 @@ func (c *Client) Release(acknowledgement dhcp4.Packet) error {
 	_, err := c.UnicastPacket(release)
 	return err
 }
-
-/*
-func DefaultUnicastFactory(src, dest net.IP) (Conn, error) {
-	return inetsocket.NewInetSock(inetsocket.SetLocalAddr(net.UDPAddr{IP: src, Port: 68}), inetsocket.SetRemoteAddr(net.UDPAddr{IP: dest, Port: 67}))
-}
-*/
