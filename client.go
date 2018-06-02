@@ -17,12 +17,12 @@ type Client struct {
 	ignoreServers []net.IP         //List of Servers to Ignore requests from.
 	timeout       time.Duration    //Time before we timeout.
 	broadcast     bool             //Set the Bcast flag in BOOTP Flags
-	connection    connection       //The Connection Method to use
+	connection    ConnectionInt    //The Connection Method to use
 	generateXID   func([]byte)     //Function Used to Generate a XID
 }
 
 //Abstracts the type of underlying socket used
-type connection interface {
+type ConnectionInt interface {
 	Close() error
 	Write(packet []byte) error
 	ReadFrom() ([]byte, net.IP, error)
@@ -90,7 +90,7 @@ func Broadcast(b bool) func(*Client) error {
 	}
 }
 
-func Connection(conn connection) func(*Client) error {
+func Connection(conn ConnectionInt) func(*Client) error {
 	return func(c *Client) error {
 		c.connection = conn
 		return nil
