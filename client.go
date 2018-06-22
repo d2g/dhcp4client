@@ -52,7 +52,7 @@ func New(options ...func(*Client) error) (*Client, error) {
 		// Hence, seed a random number generator with the current time and hardware
 		// address.
 		h := fnv.New64()
-		h.Sum(c.hardwareAddr)
+		h.Write(c.hardwareAddr)
 		seed := int64(h.Sum64()) + time.Now().Unix()
 		rnd := rand.New(rand.NewSource(seed))
 		var rndMu sync.Mutex
