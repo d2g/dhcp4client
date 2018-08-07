@@ -62,8 +62,12 @@ func (c *InetSock) Write(packet []byte) (int, error) {
 	return n, err
 }
 
-func (c *InetSock) ReadFrom(b []byte) (int, net.Addr, error) {
-	return c.ReadFromUDP(b)
+func (c *InetSock) ReadFrom(b []byte) (int, net.IP, error) {
+	i, src, err := c.ReadFromUDP(b)
+	if src != nil {
+		return i, src.IP, err
+	}
+	return i, nil, err
 }
 
 // UnicastFactory funcation

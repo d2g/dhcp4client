@@ -40,17 +40,22 @@ func Test_ExampleLinuxClient(test *testing.T) {
 		test.Fatalf("Discovery Error:%v\n", err)
 	}
 
-	offerPacket, err := exampleClient.GetOffer(&discoveryPacket)
+	offerPacket, src, err := exampleClient.GetOffer(&discoveryPacket)
 	if err != nil {
 		test.Fatalf("Offer Error:%v\n", err)
 	}
+
+	// As the client I select the DHCP server to respond to.
+	// The Server itself stops telling us it's address so we need to remember it for renewals.
+	// SIAddr isn't the DHCP SERVER it's the next server in the boot process.
+	test.Logf("DHCP Server:%v\n", src.String())
 
 	requestPacket, err := exampleClient.SendRequest(&offerPacket)
 	if err != nil {
 		test.Fatalf("Send Offer Error:%v\n", err)
 	}
 
-	acknowledgementpacket, err := exampleClient.GetAcknowledgement(&requestPacket)
+	acknowledgementpacket, _, err := exampleClient.GetAcknowledgement(&requestPacket)
 	if err != nil {
 		test.Fatalf("Get Ack Error:%v\n", err)
 	}
@@ -62,14 +67,32 @@ func Test_ExampleLinuxClient(test *testing.T) {
 		success = true
 	}
 
-	test.Logf("Packet:%v\n", acknowledgementpacket)
-
 	if !success {
 		test.Error("We didn't sucessfully get a DHCP Lease?")
 	} else {
 		test.Logf("IP Received:%v\n", acknowledgementpacket.YIAddr().String())
+		test.Logf("Bootstrap or DHCP Server:%v\n", acknowledgementpacket.SIAddr().String())
+		// Modify the ackpackage to set the correct server address.
+		acknowledgementpacket.SetSIAddr(src)
+		test.Logf("Hardware Addr is:%v\n", acknowledgementpacket.CHAddr())
 	}
 
+	test.Log("Start Renewing Lease")
+	success, renewpacket, err := exampleClient.Renew(src, acknowledgementpacket)
+	if err != nil {
+		networkError, ok := err.(*net.OpError)
+		if ok && networkError.Timeout() {
+			test.Log("Renewal Failed! Because it didn't find the DHCP server very Strange")
+			test.Errorf("Error" + err.Error())
+		}
+		test.Fatalf("Error:%v\n", err)
+	}
+
+	if !success {
+		test.Error("We didn't sucessfully Renew a DHCP Lease?")
+	} else {
+		test.Logf("IP Received:%v\n", renewpacket.YIAddr().String())
+	}
 }
 
 func Test_ExampleLinuxClient_Renew(test *testing.T) {
@@ -91,8 +114,8 @@ func Test_ExampleLinuxClient_Renew(test *testing.T) {
 	exampleClient, err := dhcp4client.New(dhcp4client.HardwareAddr(m), dhcp4client.Connection(c))
 
 	p.SetCHAddr(m)
-	p.SetCIAddr(net.IPv4(10, 0, 2, 16))
-	p.SetSIAddr(net.IPv4(10, 0, 2, 1))
+	p.SetSIAddr(net.IPv4(10, 0, 2, 2))
+	p.SetYIAddr(net.IPv4(10, 0, 2, 16))
 
 	test.Log("Start Renewing Lease")
 	success, acknowledgementpacket, err := exampleClient.Renew(p)
@@ -106,6 +129,11 @@ func Test_ExampleLinuxClient_Renew(test *testing.T) {
 	}
 
 	if !success {
+		test.Logf("Packet::%v\n", acknowledgementpacket)
+		acknowledgementpacketOptions := acknowledgementpacket.ParseOptions()
+		test.Logf("ResponseCode::%v\n", acknowledgementpacketOptions[dhcp4.OptionDHCPMessageType][0])
+		test.Logf("OpCode::%v\n", acknowledgementpacket.OpCode())
+
 		test.Error("We didn't sucessfully Renew a DHCP Lease?")
 	} else {
 		test.Logf("IP Received:%v\n", acknowledgementpacket.YIAddr().String())

@@ -9,7 +9,7 @@ import (
 // Altered to more closly represent the net.Conn
 // Unable to use net.Conn as only ReadFrom returns the senders address
 type Conn interface {
-	ReadFrom(b []byte) (int, net.Addr, error)
+	ReadFrom(b []byte) (int, net.IP, error)
 	Write(b []byte) (int, error)
 
 	Close() error

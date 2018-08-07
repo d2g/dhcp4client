@@ -96,7 +96,6 @@ type Client struct {
 	hardwareAddr  net.HardwareAddr //The HardwareAddr to send in the request.
 	ignoreServers []net.IP         //List of Servers to Ignore requests from.
 	timeout       time.Duration    //Time before we timeout.
-	broadcast     bool             //Set the Bcast flag in BOOTP Flags
 
 	connections struct {
 		broadcast connections.Conn // Broadcast connection
@@ -109,7 +108,6 @@ type Client struct {
 func New(options ...func(*Client) error) (*Client, error) {
 	c := Client{
 		timeout:     time.Second * 10,
-		broadcast:   true,
 		generateXID: CryptoGenerateXID,
 	}
 
@@ -126,10 +124,6 @@ func New(options ...func(*Client) error) (*Client, error) {
 		}
 		c.connections.broadcast = conn
 	}
-
-	//if us, ok := c.connections.broadcast.(UnicastSwitcher); ok {
-	//c.unicast = us.UnicastConn()
-	//}
 
 	return &c, nil
 }
@@ -164,13 +158,6 @@ func HardwareAddr(h net.HardwareAddr) func(*Client) error {
 	}
 }
 
-func Broadcast(b bool) func(*Client) error {
-	return func(c *Client) error {
-		c.broadcast = b
-		return nil
-	}
-}
-
 func Connection(co connections.Conn) func(*Client) error {
 	return func(c *Client) error {
 		c.connections.broadcast = co
@@ -200,13 +187,11 @@ func (c *Client) Close() error {
 }
 
 //Returns true if any of the addresses supplied are in the ignore list
-func (c *Client) ignoreServer(srcs []net.Addr) bool {
+func (c *Client) ignoreServer(srcs []net.IP) bool {
 	for _, src := range srcs {
-		s, ok := src.(*net.IPAddr)
-
 		// Ignore Servers in my Ignore list
 		for _, ignoreServer := range c.ignoreServers {
-			if ok && s.IP.Equal(ignoreServer) {
+			if src.Equal(ignoreServer) {
 				return true
 			}
 		}
@@ -239,13 +224,13 @@ func (c *Client) SendDiscoverPacket() (dhcp4.Packet, error) {
 
 //Retreive Offer...
 //Wait for the offer for a specific Discovery Packet.
-func (c *Client) GetOffer(discoverPacket *dhcp4.Packet) (dhcp4.Packet, error) {
+func (c *Client) GetOffer(discoverPacket *dhcp4.Packet) (dhcp4.Packet, net.IP, error) {
 	start := time.Now()
 
 	for {
 		timeout := c.timeout - time.Since(start)
 		if timeout <= 0 {
-			return dhcp4.Packet{}, &DHCP4Error{Err: errors.New("Timed Out"), Src: c.connections.broadcast.LocalAddr(), Dest: c.connections.broadcast.RemoteAddr(), IsTimeout: true, IsTemporary: true}
+			return dhcp4.Packet{}, nil, &DHCP4Error{Err: errors.New("Timed Out"), Src: c.connections.broadcast.LocalAddr(), Dest: c.connections.broadcast.RemoteAddr(), IsTimeout: true, IsTemporary: true}
 		}
 
 		c.connections.broadcast.SetReadDeadline(time.Now().Add(timeout))
@@ -255,7 +240,7 @@ func (c *Client) GetOffer(discoverPacket *dhcp4.Packet) (dhcp4.Packet, error) {
 		if err != nil {
 			//Ignore Network Down Errors
 			if sc, ok := err.(syscall.Errno); !ok || sc != syscall.ENETDOWN {
-				return dhcp4.Packet{}, &DHCP4Error{Err: err, Src: c.connections.broadcast.LocalAddr(), Dest: c.connections.broadcast.RemoteAddr()}
+				return dhcp4.Packet{}, source, &DHCP4Error{Err: err, Src: c.connections.broadcast.LocalAddr(), Dest: c.connections.broadcast.RemoteAddr()}
 			}
 		}
 
@@ -263,7 +248,7 @@ func (c *Client) GetOffer(discoverPacket *dhcp4.Packet) (dhcp4.Packet, error) {
 		offerPacketOptions := offerPacket.ParseOptions()
 
 		// Ignore Servers in my Ignore list
-		if c.ignoreServer([]net.Addr{source, &net.IPAddr{IP: offerPacket.SIAddr()}}) {
+		if c.ignoreServer([]net.IP{source}) {
 			continue
 		}
 
@@ -271,7 +256,7 @@ func (c *Client) GetOffer(discoverPacket *dhcp4.Packet) (dhcp4.Packet, error) {
 			continue
 		}
 
-		return offerPacket, nil
+		return offerPacket, source, nil
 	}
 
 }
@@ -279,7 +264,6 @@ func (c *Client) GetOffer(discoverPacket *dhcp4.Packet) (dhcp4.Packet, error) {
 //Send Request Based On the offer Received.
 func (c *Client) SendRequest(offerPacket *dhcp4.Packet) (requestPacket dhcp4.Packet, err error) {
 	requestPacket = c.RequestPacket(offerPacket)
-
 	requestPacket.PadToMinSize()
 
 	_, err = c.BroadcastPacket(requestPacket)
@@ -288,31 +272,31 @@ func (c *Client) SendRequest(offerPacket *dhcp4.Packet) (requestPacket dhcp4.Pac
 
 // Retrieve Acknowledgement
 // Wait for the offer for a specific Request Packet.
-func (c *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, error) {
+func (c *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, net.IP, error) {
 	start := time.Now()
 
 	for {
 		timeout := c.timeout - time.Since(start)
 		if timeout <= 0 {
-			return dhcp4.Packet{}, &DHCP4Error{Err: errors.New("Timed Out"), Src: c.connections.broadcast.LocalAddr(), Dest: c.connections.broadcast.RemoteAddr(), IsTimeout: true, IsTemporary: true}
+			return dhcp4.Packet{}, nil, &DHCP4Error{Err: errors.New("Timed Out"), Src: c.connections.broadcast.LocalAddr(), Dest: c.connections.broadcast.RemoteAddr(), IsTimeout: true, IsTemporary: true}
 		}
 
 		err := c.connections.broadcast.SetReadDeadline(time.Now().Add(timeout))
 		if err != nil {
-			return dhcp4.Packet{}, err
+			return dhcp4.Packet{}, nil, err
 		}
 
 		readBuffer := make([]byte, MaxDHCPLen)
 		_, source, err := c.connections.broadcast.ReadFrom(readBuffer)
 		if err != nil {
-			return dhcp4.Packet{}, err
+			return dhcp4.Packet{}, source, err
 		}
 
 		acknowledgementPacket := dhcp4.Packet(readBuffer)
 		acknowledgementPacketOptions := acknowledgementPacket.ParseOptions()
 
 		// Ignore Servers in my Ignore list
-		if c.ignoreServer([]net.Addr{source, &net.IPAddr{IP: acknowledgementPacket.SIAddr()}}) {
+		if c.ignoreServer([]net.IP{source}) {
 			continue
 		}
 
@@ -320,10 +304,11 @@ func (c *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, 
 			continue
 		}
 
-		return acknowledgementPacket, nil
+		return acknowledgementPacket, source, nil
 	}
 }
 
+// Send Decline to the received acknowledgement.
 func (c *Client) SendDecline(acknowledgementPacket *dhcp4.Packet) (declinePacket dhcp4.Packet, err error) {
 	declinePacket = c.DeclinePacket(acknowledgementPacket)
 	declinePacket.PadToMinSize()
@@ -389,7 +374,7 @@ func (c *Client) DiscoverPacket() dhcp4.Packet {
 	packet := dhcp4.NewPacket(dhcp4.BootRequest)
 	packet.SetCHAddr(c.hardwareAddr)
 	packet.SetXId(messageid)
-	packet.SetBroadcast(c.broadcast)
+	packet.SetBroadcast(true)
 
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Discover)})
 	return packet
@@ -403,10 +388,11 @@ func (c *Client) RequestPacket(offerPacket *dhcp4.Packet) dhcp4.Packet {
 	packet.SetCHAddr(c.hardwareAddr)
 
 	packet.SetXId(offerPacket.XId())
+	packet.SetBroadcast(true)
+
 	packet.SetCIAddr(offerPacket.CIAddr())
 	packet.SetSIAddr(offerPacket.SIAddr())
 
-	packet.SetBroadcast(c.broadcast)
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Request)})
 	packet.AddOption(dhcp4.OptionRequestedIPAddress, (offerPacket.YIAddr()).To4())
 	packet.AddOption(dhcp4.OptionServerIdentifier, offerOptions[dhcp4.OptionServerIdentifier])
@@ -426,11 +412,9 @@ func (c *Client) RenewalRequestPacket(acknowledgement *dhcp4.Packet) dhcp4.Packe
 
 	packet.SetXId(messageid)
 	packet.SetCIAddr(acknowledgement.YIAddr())
-	packet.SetSIAddr(acknowledgement.SIAddr())
 
-	packet.SetBroadcast(c.broadcast)
+	packet.SetBroadcast(false)
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Request)})
-	packet.AddOption(dhcp4.OptionRequestedIPAddress, (acknowledgement.YIAddr()).To4())
 	packet.AddOption(dhcp4.OptionServerIdentifier, acknowledgementOptions[dhcp4.OptionServerIdentifier])
 
 	return packet
@@ -447,6 +431,7 @@ func (c *Client) ReleasePacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
 	packet.SetCHAddr(acknowledgement.CHAddr())
 
 	packet.SetXId(messageid)
+	packet.SetBroadcast(true)
 	packet.SetCIAddr(acknowledgement.YIAddr())
 
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Release)})
@@ -465,6 +450,7 @@ func (c *Client) DeclinePacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
 	packet := dhcp4.NewPacket(dhcp4.BootRequest)
 	packet.SetCHAddr(acknowledgement.CHAddr())
 	packet.SetXId(messageid)
+	packet.SetBroadcast(true)
 
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Decline)})
 	packet.AddOption(dhcp4.OptionRequestedIPAddress, (acknowledgement.YIAddr()).To4())
@@ -474,38 +460,39 @@ func (c *Client) DeclinePacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
 }
 
 //Lets do a Full DHCP Request.
-func (c *Client) Request() (bool, dhcp4.Packet, error) {
+func (c *Client) Request() (bool, net.IP, dhcp4.Packet, error) {
 	discoveryPacket, err := c.SendDiscoverPacket()
 	if err != nil {
-		return false, discoveryPacket, err
+		return false, nil, discoveryPacket, err
 	}
 
-	offerPacket, err := c.GetOffer(&discoveryPacket)
+	offerPacket, src, err := c.GetOffer(&discoveryPacket)
 	if err != nil {
-		return false, offerPacket, err
+		return false, src, offerPacket, err
 	}
 
 	requestPacket, err := c.SendRequest(&offerPacket)
 	if err != nil {
-		return false, requestPacket, err
+		return false, src, requestPacket, err
 	}
 
-	acknowledgement, err := c.GetAcknowledgement(&requestPacket)
+	acknowledgement, _, err := c.GetAcknowledgement(&requestPacket)
 	if err != nil {
-		return false, acknowledgement, err
+		return false, src, acknowledgement, err
 	}
 
 	acknowledgementOptions := acknowledgement.ParseOptions()
 	if dhcp4.MessageType(acknowledgementOptions[dhcp4.OptionDHCPMessageType][0]) != dhcp4.ACK {
-		return false, acknowledgement, nil
+		return false, src, acknowledgement, nil
 	}
 
-	return true, acknowledgement, nil
+	return true, src, acknowledgement, nil
 }
 
 //Renew a lease backed on the Acknowledgement Packet.
 //Returns Sucessfull, The AcknoledgementPacket, Any Errors
-func (c *Client) Renew(acknowledgement dhcp4.Packet) (bool, dhcp4.Packet, error) {
+//The ack packet doesn't include the correct details for the DHCP server (Needs reconsidering)
+func (c *Client) Renew(dhcpserver net.IP, acknowledgement dhcp4.Packet) (bool, dhcp4.Packet, error) {
 	renewRequest := c.RenewalRequestPacket(&acknowledgement)
 	renewRequest.PadToMinSize()
 
@@ -514,7 +501,7 @@ func (c *Client) Renew(acknowledgement dhcp4.Packet) (bool, dhcp4.Packet, error)
 		return false, renewRequest, err
 	}
 
-	newAcknowledgement, err := c.GetAcknowledgement(&renewRequest)
+	newAcknowledgement, _, err := c.GetAcknowledgement(&renewRequest)
 	if err != nil {
 		return false, newAcknowledgement, err
 	}

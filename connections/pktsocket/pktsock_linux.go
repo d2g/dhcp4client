@@ -149,7 +149,7 @@ func (pc *PacketSock) Write(packet []byte) (int, error) {
 	return 0, unix.Sendto(pc.fd, pkt, 0, &lladdr)
 }
 
-func (pc *PacketSock) ReadFrom(b []byte) (int, net.Addr, error) {
+func (pc *PacketSock) ReadFrom(b []byte) (int, net.IP, error) {
 	pkt := make([]byte, maxIPHdrLen+udpHdrLen+len(b))
 	n, _, err := unix.Recvfrom(pc.fd, pkt, 0)
 	if err != nil {
@@ -159,7 +159,7 @@ func (pc *PacketSock) ReadFrom(b []byte) (int, net.Addr, error) {
 	// IP hdr len
 	ihl := int(pkt[0]&0x0F) * 4
 	// Source IP address
-	src := net.IPAddr{IP: pkt[12:16]}
+	src := net.IPv4(pkt[12], pkt[13], pkt[14], pkt[15])
 
 	// TODO is there a better way of doing this without a copy?
 	copy(b, pkt[ihl+udpHdrLen:n:len(b)])
@@ -254,5 +254,13 @@ func (pc *PacketSock) UnicastConn(src, dest net.IP) (connections.Conn, error) {
 		Port: pc.raddr.Port,
 	}
 
-	return NewPacketSock(pc.ifindex, SetLocalAddr(laddr), SetRemoteAddr(raddr))
+	c := &PacketSock{
+		fd:       pc.fd,
+		laddr:    laddr,
+		raddr:    raddr,
+		randFunc: pc.randFunc,
+		ifindex:  pc.ifindex,
+	}
+
+	return c, nil
 }
