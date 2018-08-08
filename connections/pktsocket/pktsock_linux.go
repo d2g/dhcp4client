@@ -164,7 +164,7 @@ func (pc *PacketSock) ReadFrom(b []byte) (int, net.IP, error) {
 	// TODO is there a better way of doing this without a copy?
 	copy(b, pkt[ihl+udpHdrLen:n:len(b)])
 
-	return (n - (ihl + udpHdrLen)), &src, nil
+	return (n - (ihl + udpHdrLen)), src, nil
 }
 
 func (pc *PacketSock) SetDeadline(t time.Time) error {

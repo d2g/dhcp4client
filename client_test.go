@@ -12,7 +12,7 @@ import (
 func Test_ExampleClient(test *testing.T) {
 	var err error
 
-	m, err := net.ParseMAC("08-00-27-00-A8-E8")
+	m, err := net.ParseMAC("08-00-27-DF-83-61")
 	if err != nil {
 		test.Logf("MAC Error:%v\n", err)
 	}
@@ -73,7 +73,7 @@ func Test_ExampleClient(test *testing.T) {
 func Test_ExampleClientWithMathGenerateXID(test *testing.T) {
 	var err error
 
-	m, err := net.ParseMAC("08-00-27-00-A8-E8")
+	m, err := net.ParseMAC("08-00-27-DF-83-61")
 	if err != nil {
 		test.Logf("MAC Error:%v\n", err)
 	}

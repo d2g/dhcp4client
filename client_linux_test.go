@@ -13,7 +13,7 @@ import (
 func Test_ExampleLinuxClient(test *testing.T) {
 	var err error
 
-	m, err := net.ParseMAC("08-00-27-00-A8-E8")
+	m, err := net.ParseMAC("08-00-27-DF-83-61")
 	if err != nil {
 		test.Logf("MAC Error:%v\n", err)
 	}
@@ -34,8 +34,6 @@ func Test_ExampleLinuxClient(test *testing.T) {
 	success := false
 
 	discoveryPacket, err := exampleClient.SendDiscoverPacket()
-	test.Logf("Discovery:%v\n", discoveryPacket)
-
 	if err != nil {
 		test.Fatalf("Discovery Error:%v\n", err)
 	}
@@ -99,7 +97,7 @@ func Test_ExampleLinuxClient_Renew(test *testing.T) {
 
 	p := dhcp4.NewPacket(dhcp4.BootRequest)
 
-	m, err := net.ParseMAC("08-00-27-00-A8-E8")
+	m, err := net.ParseMAC("08-00-27-DF-83-61")
 	if err != nil {
 		test.Logf("MAC Error:%v\n", err)
 	}
@@ -118,7 +116,7 @@ func Test_ExampleLinuxClient_Renew(test *testing.T) {
 	p.SetYIAddr(net.IPv4(10, 0, 2, 16))
 
 	test.Log("Start Renewing Lease")
-	success, acknowledgementpacket, err := exampleClient.Renew(p)
+	success, acknowledgementpacket, err := exampleClient.Renew(net.IPv4(10, 0, 2, 2), p)
 	if err != nil {
 		networkError, ok := err.(*net.OpError)
 		if ok && networkError.Timeout() {
