@@ -334,14 +334,15 @@ func (c *Client) BroadcastPacket(packet dhcp4.Packet) (i int, err error) {
 	return
 }
 
-func (c *Client) UnicastPacket(packet dhcp4.Packet) (i int, err error) {
+func (c *Client) UnicastPacket(dhcpIP net.IP, packet dhcp4.Packet) (i int, err error) {
 	ncr := true
 
 	if c.connections.unicast != nil {
 		laddr, lok := c.connections.unicast.LocalAddr().(*net.IPAddr)
 		raddr, rok := c.connections.unicast.RemoteAddr().(*net.IPAddr)
 
-		if lok && rok && laddr.IP.Equal(packet.CIAddr()) && raddr.IP.Equal(packet.SIAddr()) {
+		//SIAddr is not the DHCP server.
+		if lok && rok && laddr.IP.Equal(packet.CIAddr()) && raddr.IP.Equal(dhcpIP) {
 			ncr = false
 		}
 
@@ -351,7 +352,7 @@ func (c *Client) UnicastPacket(packet dhcp4.Packet) (i int, err error) {
 	}
 
 	if ncr {
-		c.connections.unicast, err = c.connections.broadcast.UnicastConn(packet.CIAddr(), packet.SIAddr())
+		c.connections.unicast, err = c.connections.broadcast.UnicastConn(packet.CIAddr(), dhcpIP)
 		if err != nil {
 			return 0, err
 		}
@@ -496,7 +497,7 @@ func (c *Client) Renew(dhcpserver net.IP, acknowledgement dhcp4.Packet) (bool, d
 	renewRequest := c.RenewalRequestPacket(&acknowledgement)
 	renewRequest.PadToMinSize()
 
-	_, err := c.UnicastPacket(renewRequest)
+	_, err := c.UnicastPacket(dhcpserver, renewRequest)
 	if err != nil {
 		return false, renewRequest, err
 	}
@@ -516,10 +517,10 @@ func (c *Client) Renew(dhcpserver net.IP, acknowledgement dhcp4.Packet) (bool, d
 
 //Release a lease backed on the Acknowledgement Packet.
 //Returns Any Errors
-func (c *Client) Release(acknowledgement dhcp4.Packet) error {
+func (c *Client) Release(dhcpip net.IP, acknowledgement dhcp4.Packet) error {
 	release := c.ReleasePacket(&acknowledgement)
 	release.PadToMinSize()
 
-	_, err := c.UnicastPacket(release)
+	_, err := c.UnicastPacket(dhcpip, release)
 	return err
 }

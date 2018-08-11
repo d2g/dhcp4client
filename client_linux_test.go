@@ -60,7 +60,7 @@ func Test_ExampleLinuxClient(test *testing.T) {
 
 	acknowledgementOptions := acknowledgementpacket.ParseOptions()
 	if dhcp4.MessageType(acknowledgementOptions[dhcp4.OptionDHCPMessageType][0]) != dhcp4.ACK {
-		test.Fatalf("Not Acknoledged")
+		test.Fatalf("Not Acknowledged")
 	} else {
 		success = true
 	}
