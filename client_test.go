@@ -31,7 +31,7 @@ func Test_ExampleClient(test *testing.T) {
 	}
 	defer exampleClient.Close()
 
-	success, acknowledgementpacket, err := exampleClient.Request()
+	success, acknowledgementpacket, err := exampleClient.Request(nil)
 
 	test.Logf("Success:%v\n", success)
 	test.Logf("Packet:%v\n", acknowledgementpacket)
@@ -52,7 +52,7 @@ func Test_ExampleClient(test *testing.T) {
 	}
 
 	test.Log("Start Renewing Lease")
-	success, acknowledgementpacket, err = exampleClient.Renew(acknowledgementpacket)
+	success, acknowledgementpacket, err = exampleClient.Renew(acknowledgementpacket, nil)
 	if err != nil {
 		networkError, ok := err.(*net.OpError)
 		if ok && networkError.Timeout() {
@@ -94,7 +94,7 @@ func Test_ExampleClientWithMathGenerateXID(test *testing.T) {
 	}
 	defer exampleClient.Close()
 
-	success, acknowledgementpacket, err := exampleClient.Request()
+	success, acknowledgementpacket, err := exampleClient.Request(nil)
 
 	test.Logf("Success:%v\n", success)
 	test.Logf("Packet:%v\n", acknowledgementpacket)

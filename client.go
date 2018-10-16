@@ -137,8 +137,8 @@ func (c *Client) Close() error {
 }
 
 //Send the Discovery Packet to the Broadcast Channel
-func (c *Client) SendDiscoverPacket() (dhcp4.Packet, error) {
-	discoveryPacket := c.DiscoverPacket()
+func (c *Client) SendDiscoverPacket(options dhcp4.Options) (dhcp4.Packet, error) {
+	discoveryPacket := c.DiscoverPacket(options)
 	discoveryPacket.PadToMinSize()
 
 	return discoveryPacket, c.SendPacket(discoveryPacket)
@@ -197,8 +197,8 @@ func (c *Client) GetOffer(discoverPacket *dhcp4.Packet) (dhcp4.Packet, error) {
 }
 
 //Send Request Based On the offer Received.
-func (c *Client) SendRequest(offerPacket *dhcp4.Packet) (dhcp4.Packet, error) {
-	requestPacket := c.RequestPacket(offerPacket)
+func (c *Client) SendRequest(offerPacket *dhcp4.Packet, options dhcp4.Options) (dhcp4.Packet, error) {
+	requestPacket := c.RequestPacket(offerPacket, options)
 	requestPacket.PadToMinSize()
 
 	return requestPacket, c.SendPacket(requestPacket)
@@ -247,8 +247,8 @@ func (c *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, 
 }
 
 //Send Decline to the received acknowledgement.
-func (c *Client) SendDecline(acknowledgementPacket *dhcp4.Packet) (dhcp4.Packet, error) {
-	declinePacket := c.DeclinePacket(acknowledgementPacket)
+func (c *Client) SendDecline(acknowledgementPacket *dhcp4.Packet, options dhcp4.Options) (dhcp4.Packet, error) {
+	declinePacket := c.DeclinePacket(acknowledgementPacket, options)
 	declinePacket.PadToMinSize()
 
 	return declinePacket, c.SendPacket(declinePacket)
@@ -260,7 +260,7 @@ func (c *Client) SendPacket(packet dhcp4.Packet) error {
 }
 
 //Create Discover Packet
-func (c *Client) DiscoverPacket() dhcp4.Packet {
+func (c *Client) DiscoverPacket(options dhcp4.Options) dhcp4.Packet {
 	messageid := make([]byte, 4)
 	c.generateXID(messageid)
 
@@ -270,12 +270,15 @@ func (c *Client) DiscoverPacket() dhcp4.Packet {
 	packet.SetBroadcast(c.broadcast)
 
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Discover)})
+	for opt, data := range options {
+		packet.AddOption(opt, data)
+	}
 	//packet.PadToMinSize()
 	return packet
 }
 
 //Create Request Packet
-func (c *Client) RequestPacket(offerPacket *dhcp4.Packet) dhcp4.Packet {
+func (c *Client) RequestPacket(offerPacket *dhcp4.Packet, options dhcp4.Options) dhcp4.Packet {
 	offerOptions := offerPacket.ParseOptions()
 
 	packet := dhcp4.NewPacket(dhcp4.BootRequest)
@@ -289,12 +292,15 @@ func (c *Client) RequestPacket(offerPacket *dhcp4.Packet) dhcp4.Packet {
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Request)})
 	packet.AddOption(dhcp4.OptionRequestedIPAddress, (offerPacket.YIAddr()).To4())
 	packet.AddOption(dhcp4.OptionServerIdentifier, offerOptions[dhcp4.OptionServerIdentifier])
+	for opt, data := range options {
+		packet.AddOption(opt, data)
+	}
 
 	return packet
 }
 
 //Create Request Packet For a Renew
-func (c *Client) RenewalRequestPacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
+func (c *Client) RenewalRequestPacket(acknowledgement *dhcp4.Packet, options dhcp4.Options) dhcp4.Packet {
 	messageid := make([]byte, 4)
 	c.generateXID(messageid)
 
@@ -311,12 +317,15 @@ func (c *Client) RenewalRequestPacket(acknowledgement *dhcp4.Packet) dhcp4.Packe
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Request)})
 	packet.AddOption(dhcp4.OptionRequestedIPAddress, (acknowledgement.YIAddr()).To4())
 	packet.AddOption(dhcp4.OptionServerIdentifier, acknowledgementOptions[dhcp4.OptionServerIdentifier])
+	for opt, data := range options {
+		packet.AddOption(opt, data)
+	}
 
 	return packet
 }
 
 //Create Release Packet For a Release
-func (c *Client) ReleasePacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
+func (c *Client) ReleasePacket(acknowledgement *dhcp4.Packet, options dhcp4.Options) dhcp4.Packet {
 	messageid := make([]byte, 4)
 	c.generateXID(messageid)
 
@@ -330,12 +339,15 @@ func (c *Client) ReleasePacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
 
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Release)})
 	packet.AddOption(dhcp4.OptionServerIdentifier, acknowledgementOptions[dhcp4.OptionServerIdentifier])
+	for opt, data := range options {
+		packet.AddOption(opt, data)
+	}
 
 	return packet
 }
 
 //Create Decline Packet
-func (c *Client) DeclinePacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
+func (c *Client) DeclinePacket(acknowledgement *dhcp4.Packet, options dhcp4.Options) dhcp4.Packet {
 	messageid := make([]byte, 4)
 	c.generateXID(messageid)
 
@@ -348,13 +360,16 @@ func (c *Client) DeclinePacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Decline)})
 	packet.AddOption(dhcp4.OptionRequestedIPAddress, (acknowledgement.YIAddr()).To4())
 	packet.AddOption(dhcp4.OptionServerIdentifier, acknowledgementOptions[dhcp4.OptionServerIdentifier])
+	for opt, data := range options {
+		packet.AddOption(opt, data)
+	}
 
 	return packet
 }
 
 //Lets do a Full DHCP Request.
-func (c *Client) Request() (bool, dhcp4.Packet, error) {
-	discoveryPacket, err := c.SendDiscoverPacket()
+func (c *Client) Request(options dhcp4.Options) (bool, dhcp4.Packet, error) {
+	discoveryPacket, err := c.SendDiscoverPacket(options)
 	if err != nil {
 		return false, discoveryPacket, err
 	}
@@ -364,7 +379,7 @@ func (c *Client) Request() (bool, dhcp4.Packet, error) {
 		return false, offerPacket, err
 	}
 
-	requestPacket, err := c.SendRequest(&offerPacket)
+	requestPacket, err := c.SendRequest(&offerPacket, options)
 	if err != nil {
 		return false, requestPacket, err
 	}
@@ -384,8 +399,8 @@ func (c *Client) Request() (bool, dhcp4.Packet, error) {
 
 //Renew a lease backed on the Acknowledgement Packet.
 //Returns Sucessfull, The AcknoledgementPacket, Any Errors
-func (c *Client) Renew(acknowledgement dhcp4.Packet) (bool, dhcp4.Packet, error) {
-	renewRequest := c.RenewalRequestPacket(&acknowledgement)
+func (c *Client) Renew(acknowledgement dhcp4.Packet, options dhcp4.Options) (bool, dhcp4.Packet, error) {
+	renewRequest := c.RenewalRequestPacket(&acknowledgement, options)
 	renewRequest.PadToMinSize()
 
 	err := c.SendPacket(renewRequest)
@@ -408,8 +423,8 @@ func (c *Client) Renew(acknowledgement dhcp4.Packet) (bool, dhcp4.Packet, error)
 
 //Release a lease backed on the Acknowledgement Packet.
 //Returns Any Errors
-func (c *Client) Release(acknowledgement dhcp4.Packet) error {
-	release := c.ReleasePacket(&acknowledgement)
+func (c *Client) Release(acknowledgement dhcp4.Packet, options dhcp4.Options) error {
+	release := c.ReleasePacket(&acknowledgement, options)
 	release.PadToMinSize()
 
 	return c.SendPacket(release)

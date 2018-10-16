@@ -34,7 +34,7 @@ func Test_ExampleLinuxClient(test *testing.T) {
 
 	success := false
 
-	discoveryPacket, err := exampleClient.SendDiscoverPacket()
+	discoveryPacket, err := exampleClient.SendDiscoverPacket(nil)
 	test.Logf("Discovery:%v\n", discoveryPacket)
 
 	if err != nil {
@@ -55,7 +55,7 @@ func Test_ExampleLinuxClient(test *testing.T) {
 		test.Fatalf("Offer Error:%v\n", err)
 	}
 
-	requestPacket, err := exampleClient.SendRequest(&offerPacket)
+	requestPacket, err := exampleClient.SendRequest(&offerPacket, nil)
 	if err != nil {
 		test.Fatalf("Send Offer Error:%v\n", err)
 	}
