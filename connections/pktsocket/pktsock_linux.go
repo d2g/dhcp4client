@@ -28,8 +28,8 @@ type PacketSock struct {
 	fd int
 
 	ifindex int
-	laddr   net.UDPAddr
-	raddr   net.UDPAddr
+	laddr   *net.UDPAddr
+	raddr   *net.UDPAddr
 
 	randFunc func(p []byte) (n int, err error)
 }
@@ -55,8 +55,7 @@ func (m MultiError) Error() string {
 func NewPacketSock(ifindex int, options ...func(*PacketSock) error) (*PacketSock, error) {
 
 	c := &PacketSock{
-		laddr:    net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 68},
-		raddr:    net.UDPAddr{IP: net.IPv4bcast, Port: 67},
+		laddr:    &net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 68},
 		randFunc: rand.Read,
 		ifindex:  ifindex,
 	}
@@ -74,15 +73,6 @@ func NewPacketSock(ifindex int, options ...func(*PacketSock) error) (*PacketSock
 		return nil, err
 	}
 
-	addr := unix.SockaddrLinklayer{
-		Ifindex:  c.ifindex,
-		Protocol: swap16(unix.ETH_P_IP),
-	}
-
-	if err = unix.Bind(c.fd, &addr); err != nil {
-		return nil, err
-	}
-
 	return c, nil
 }
 
@@ -95,20 +85,6 @@ func (c *PacketSock) setOption(options ...func(*PacketSock) error) error {
 	return nil
 }
 
-func SetLocalAddr(l net.UDPAddr) func(*PacketSock) error {
-	return func(c *PacketSock) error {
-		c.laddr = l
-		return nil
-	}
-}
-
-func SetRemoteAddr(r net.UDPAddr) func(*PacketSock) error {
-	return func(c *PacketSock) error {
-		c.raddr = r
-		return nil
-	}
-}
-
 func RandFunc(f func(p []byte) (n int, err error)) func(*PacketSock) error {
 	return func(ps *PacketSock) error {
 		ps.randFunc = f
@@ -116,12 +92,12 @@ func RandFunc(f func(p []byte) (n int, err error)) func(*PacketSock) error {
 	}
 }
 
-func (pc *PacketSock) LocalAddr() net.Addr {
-	return &pc.laddr
+func (pc *PacketSock) LocalAddr() *net.UDPAddr {
+	return pc.laddr
 }
 
-func (pc *PacketSock) RemoteAddr() net.Addr {
-	return &pc.raddr
+func (pc *PacketSock) RemoteAddr() *net.UDPAddr {
+	return pc.raddr
 }
 
 func (pc *PacketSock) Close() error {
@@ -149,7 +125,7 @@ func (pc *PacketSock) Write(packet []byte) (int, error) {
 	return 0, unix.Sendto(pc.fd, pkt, 0, &lladdr)
 }
 
-func (pc *PacketSock) ReadFrom(b []byte) (int, net.IP, error) {
+func (pc *PacketSock) ReadFrom(b []byte) (int, *net.UDPAddr, error) {
 	pkt := make([]byte, maxIPHdrLen+udpHdrLen+len(b))
 	n, _, err := unix.Recvfrom(pc.fd, pkt, 0)
 	if err != nil {
@@ -158,13 +134,17 @@ func (pc *PacketSock) ReadFrom(b []byte) (int, net.IP, error) {
 
 	// IP hdr len
 	ihl := int(pkt[0]&0x0F) * 4
+
 	// Source IP address
-	src := net.IPv4(pkt[12], pkt[13], pkt[14], pkt[15])
+	// TODO: Add Source PORT
+	src := net.UDPAddr{
+		IP: net.IPv4(pkt[12], pkt[13], pkt[14], pkt[15]),
+	}
 
 	// TODO is there a better way of doing this without a copy?
 	copy(b, pkt[ihl+udpHdrLen:n:len(b)])
 
-	return (n - (ihl + udpHdrLen)), src, nil
+	return (n - (ihl + udpHdrLen)), &src, nil
 }
 
 func (pc *PacketSock) SetDeadline(t time.Time) error {
@@ -216,6 +196,45 @@ func (pc *PacketSock) fillUDPHdr(hdr []byte, payloadLen uint16) {
 	binary.BigEndian.PutUint16(hdr[4:6], udpHdrLen+payloadLen)
 }
 
+func (pc *PacketSock) Dialer() func(*net.UDPAddr, *net.UDPAddr) (connections.UDPConn, error) {
+	return func(l *net.UDPAddr, r *net.UDPAddr) (connections.UDPConn, error) {
+		//Build a new packet socket with the current connection and return it?
+		npc := PacketSock{
+			fd:       pc.fd,
+			ifindex:  pc.ifindex,
+			laddr:    l,
+			raddr:    r,
+			randFunc: pc.randFunc,
+		}
+
+		return &npc, nil
+	}
+}
+
+func (pc *PacketSock) Listener() func(*net.UDPAddr) (connections.UDPConn, error) {
+	return func(l *net.UDPAddr) (connections.UDPConn, error) {
+
+		npc := PacketSock{
+			fd:       pc.fd,
+			ifindex:  pc.ifindex,
+			laddr:    l,
+			raddr:    &net.UDPAddr{IP: net.IPv4bcast, Port: 67},
+			randFunc: pc.randFunc,
+		}
+
+		addr := unix.SockaddrLinklayer{
+			Ifindex:  npc.ifindex,
+			Protocol: swap16(unix.ETH_P_IP),
+		}
+
+		if err := unix.Bind(npc.fd, &addr); err != nil {
+			return nil, err
+		}
+
+		return &npc, nil
+	}
+}
+
 // compute's 1's complement checksum
 func chksum(p []byte, csum []byte) {
 	cklen := len(p)
@@ -238,29 +257,4 @@ func swap16(x uint16) uint16 {
 	var b [2]byte
 	binary.BigEndian.PutUint16(b[:], x)
 	return binary.LittleEndian.Uint16(b[:])
-}
-
-// UnicastFactory funcation
-
-func (pc *PacketSock) UnicastConn(src, dest net.IP) (connections.Conn, error) {
-	//Work out the UDP addresses from the IP provided and the ports in the current connection.
-	laddr := net.UDPAddr{
-		IP:   src,
-		Port: pc.laddr.Port,
-	}
-
-	raddr := net.UDPAddr{
-		IP:   dest,
-		Port: pc.raddr.Port,
-	}
-
-	c := &PacketSock{
-		fd:       pc.fd,
-		laddr:    laddr,
-		raddr:    raddr,
-		randFunc: pc.randFunc,
-		ifindex:  pc.ifindex,
-	}
-
-	return c, nil
 }

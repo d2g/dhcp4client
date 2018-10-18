@@ -8,80 +8,38 @@ import (
 
 type InetSock struct {
 	*net.UDPConn
-
-	laddr net.UDPAddr
-	raddr net.UDPAddr
 }
 
-func NewInetSock(options ...func(*InetSock) error) (*InetSock, error) {
-	c := &InetSock{
-		laddr: net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 68},
-		raddr: net.UDPAddr{IP: net.IPv4bcast, Port: 67},
-	}
-
-	err := c.setOption(options...)
-	if err != nil {
-		return nil, err
-	}
-
-	conn, err := net.ListenUDP("udp4", &c.laddr)
-	if err != nil {
-		return nil, err
-	}
-
-	c.UDPConn = conn
-
-	return c, err
-}
-
-func (c *InetSock) setOption(options ...func(*InetSock) error) error {
-	for _, opt := range options {
-		if err := opt(c); err != nil {
-			return err
+func (is *InetSock) Dialer() func(*net.UDPAddr, *net.UDPAddr) (connections.UDPConn, error) {
+	return func(l *net.UDPAddr, r *net.UDPAddr) (connections.UDPConn, error) {
+		u, err := net.DialUDP("udp4", l, r)
+		if err != nil {
+			return nil, err
 		}
-	}
-	return nil
-}
-
-func SetLocalAddr(l net.UDPAddr) func(*InetSock) error {
-	return func(c *InetSock) error {
-		c.laddr = l
-		return nil
+		return &InetSock{u}, nil
 	}
 }
 
-func SetRemoteAddr(r net.UDPAddr) func(*InetSock) error {
-	return func(c *InetSock) error {
-		c.raddr = r
-		return nil
+func (is *InetSock) Listener() func(*net.UDPAddr) (connections.UDPConn, error) {
+	return func(l *net.UDPAddr) (connections.UDPConn, error) {
+
+		u, err := net.ListenUDP("udp4", l)
+		return &InetSock{u}, err
 	}
 }
 
-func (c *InetSock) Write(packet []byte) (int, error) {
-	n, err := c.WriteToUDP(packet, &c.raddr)
-	return n, err
+func (is *InetSock) LocalAddr() *net.UDPAddr {
+	return is.UDPConn.LocalAddr().(*net.UDPAddr)
 }
 
-func (c *InetSock) ReadFrom(b []byte) (int, net.IP, error) {
-	i, src, err := c.ReadFromUDP(b)
-	if src != nil {
-		return i, src.IP, err
-	}
-	return i, nil, err
+func (is *InetSock) RemoteAddr() *net.UDPAddr {
+	return is.UDPConn.RemoteAddr().(*net.UDPAddr)
 }
 
-// UnicastFactory funcation
-func (c *InetSock) UnicastConn(src, dest net.IP) (connections.Conn, error) {
-	//Work out the UDP addresses from the IP provided and the ports in the current connection.
-	laddr := net.UDPAddr{
-		IP:   src,
-		Port: c.laddr.Port,
+func (is *InetSock) ReadFrom(b []byte) (int, *net.UDPAddr, error) {
+	a, r, e := is.UDPConn.ReadFrom(b)
+	if r != nil {
+		return a, r.(*net.UDPAddr), e
 	}
-
-	raddr := net.UDPAddr{
-		IP:   dest,
-		Port: c.raddr.Port,
-	}
-
-	return NewInetSock(SetLocalAddr(laddr), SetRemoteAddr(raddr))
+	return a, nil, e
 }

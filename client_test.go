@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/d2g/dhcp4client"
-	"github.com/d2g/dhcp4client/connections/inetsocket"
+	//"github.com/d2g/dhcp4client/connections/inetsocket"
 )
 
 //Example Client
@@ -19,13 +19,7 @@ func Test_ExampleClient(test *testing.T) {
 
 	//Create a connection to use
 	//We need to set the connection ports to 1068 and 1067 so we don't need root access
-	c, err := inetsocket.NewInetSock(inetsocket.SetLocalAddr(net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 1068}), inetsocket.SetRemoteAddr(net.UDPAddr{IP: net.IPv4bcast, Port: 1067}))
-	if err != nil {
-		test.Error("Client Connection Generation:" + err.Error())
-	}
-	defer c.Close()
-
-	exampleClient, err := dhcp4client.New(dhcp4client.HardwareAddr(m), dhcp4client.Connection(c))
+	exampleClient, err := dhcp4client.New(dhcp4client.HardwareAddr(m))
 	if err != nil {
 		test.Fatalf("Error:%v\n", err)
 	}
@@ -51,7 +45,7 @@ func Test_ExampleClient(test *testing.T) {
 	}
 
 	test.Log("Start Renewing Lease")
-	success, acknowledgementpacket, err = exampleClient.Renew(srv, acknowledgementpacket)
+	success, acknowledgementpacket, err = exampleClient.Renew(*srv, acknowledgementpacket)
 	if err != nil {
 		networkError, ok := err.(*net.OpError)
 		if ok && networkError.Timeout() {
@@ -80,14 +74,9 @@ func Test_ExampleClientWithMathGenerateXID(test *testing.T) {
 
 	//Create a connection to use
 	//We need to set the connection ports to 1068 and 1067 so we don't need root access
-	c, err := inetsocket.NewInetSock(inetsocket.SetLocalAddr(net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 1068}), inetsocket.SetRemoteAddr(net.UDPAddr{IP: net.IPv4bcast, Port: 1067}))
-	if err != nil {
-		test.Error("Client Connection Generation:" + err.Error())
-	}
-	defer c.Close()
 
 	// If you ar using MathGenerateXID then you are responsible for seeding math/rand
-	exampleClient, err := dhcp4client.New(dhcp4client.HardwareAddr(m), dhcp4client.Connection(c), dhcp4client.GenerateXID(dhcp4client.MathGenerateXID))
+	exampleClient, err := dhcp4client.New(dhcp4client.HardwareAddr(m), dhcp4client.GenerateXID(dhcp4client.MathGenerateXID))
 	if err != nil {
 		test.Fatalf("Error:%v\n", err)
 	}
