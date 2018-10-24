@@ -25,13 +25,18 @@ var (
 
 // abstracts AF_PACKET
 type PacketSock struct {
-	fd int
-
-	ifindex int
-	laddr   *net.UDPAddr
-	raddr   *net.UDPAddr
-
+	fd       int
+	ifindex  int
 	randFunc func(p []byte) (n int, err error)
+}
+
+type PacketSockCon struct {
+	fd       *int
+	ifindex  *int
+	randFunc func(p []byte) (n int, err error)
+
+	laddr *net.UDPAddr
+	raddr *net.UDPAddr
 }
 
 type MultiError []error
@@ -55,9 +60,14 @@ func (m MultiError) Error() string {
 func NewPacketSock(ifindex int, options ...func(*PacketSock) error) (*PacketSock, error) {
 
 	c := &PacketSock{
-		laddr:    &net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 68},
 		randFunc: rand.Read,
 		ifindex:  ifindex,
+	}
+
+	//Functional Options?
+	err := c.setOption(options...)
+	if err != nil {
+		return nil, err
 	}
 
 	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_DGRAM, int(swap16(unix.ETH_P_IP)))
@@ -67,9 +77,12 @@ func NewPacketSock(ifindex int, options ...func(*PacketSock) error) (*PacketSock
 
 	c.fd = fd
 
-	//Functional Options?
-	err = c.setOption(options...)
-	if err != nil {
+	addr := unix.SockaddrLinklayer{
+		Ifindex:  c.ifindex,
+		Protocol: swap16(unix.ETH_P_IP),
+	}
+
+	if err := unix.Bind(c.fd, &addr); err != nil {
 		return nil, err
 	}
 
@@ -92,22 +105,40 @@ func RandFunc(f func(p []byte) (n int, err error)) func(*PacketSock) error {
 	}
 }
 
-func (pc *PacketSock) LocalAddr() *net.UDPAddr {
-	return pc.laddr
-}
-
-func (pc *PacketSock) RemoteAddr() *net.UDPAddr {
-	return pc.raddr
-}
-
 func (pc *PacketSock) Close() error {
 	return unix.Close(pc.fd)
 }
 
+func (ps *PacketSock) NewCon(l *net.UDPAddr, r *net.UDPAddr) *PacketSockCon {
+
+	c := &PacketSockCon{
+		laddr:    l,
+		raddr:    r,
+		randFunc: ps.randFunc,
+		ifindex:  &ps.ifindex,
+		fd:       &ps.fd,
+	}
+
+	return c
+}
+
+func (pc *PacketSockCon) LocalAddr() *net.UDPAddr {
+	return pc.laddr
+}
+
+func (pc *PacketSockCon) RemoteAddr() *net.UDPAddr {
+	return pc.raddr
+}
+
+func (pc *PacketSockCon) Close() error {
+	return nil
+}
+
 // Unix.SendTo returns an error when the network is down. Which it obviously isn't an error because we're bring the network up.
-func (pc *PacketSock) Write(packet []byte) (int, error) {
+func (pc *PacketSockCon) Write(packet []byte) (int, error) {
+
 	lladdr := unix.SockaddrLinklayer{
-		Ifindex:  pc.ifindex,
+		Ifindex:  *pc.ifindex,
 		Protocol: swap16(unix.ETH_P_IP),
 		Halen:    uint8(len(bcastMAC)),
 	}
@@ -122,12 +153,12 @@ func (pc *PacketSock) Write(packet []byte) (int, error) {
 	copy(pkt[minIPHdrLen+udpHdrLen:], packet)
 
 	// TODO Look at how to return the correct length written.
-	return 0, unix.Sendto(pc.fd, pkt, 0, &lladdr)
+	return 0, unix.Sendto(*pc.fd, pkt, 0, &lladdr)
 }
 
-func (pc *PacketSock) ReadFrom(b []byte) (int, *net.UDPAddr, error) {
+func (pc *PacketSockCon) ReadFrom(b []byte) (int, *net.UDPAddr, error) {
 	pkt := make([]byte, maxIPHdrLen+udpHdrLen+len(b))
-	n, _, err := unix.Recvfrom(pc.fd, pkt, 0)
+	n, _, err := unix.Recvfrom(*pc.fd, pkt, 0)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -147,26 +178,26 @@ func (pc *PacketSock) ReadFrom(b []byte) (int, *net.UDPAddr, error) {
 	return (n - (ihl + udpHdrLen)), &src, nil
 }
 
-func (pc *PacketSock) SetDeadline(t time.Time) error {
+func (pc *PacketSockCon) SetDeadline(t time.Time) error {
 	var err MultiError
 	err = append(err, pc.SetReadDeadline(t))
 	err = append(err, pc.SetWriteDeadline(t))
 	return err
 }
 
-func (pc *PacketSock) SetReadDeadline(t time.Time) error {
+func (pc *PacketSockCon) SetReadDeadline(t time.Time) error {
 	remain := t.Sub(time.Now())
 	tv := unix.NsecToTimeval(remain.Nanoseconds())
-	return unix.SetsockoptTimeval(pc.fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &tv)
+	return unix.SetsockoptTimeval(*pc.fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &tv)
 }
 
-func (pc *PacketSock) SetWriteDeadline(t time.Time) error {
+func (pc *PacketSockCon) SetWriteDeadline(t time.Time) error {
 	remain := t.Sub(time.Now())
 	tv := unix.NsecToTimeval(remain.Nanoseconds())
-	return unix.SetsockoptTimeval(pc.fd, unix.SOL_SOCKET, unix.SO_SNDTIMEO, &tv)
+	return unix.SetsockoptTimeval(*pc.fd, unix.SOL_SOCKET, unix.SO_SNDTIMEO, &tv)
 }
 
-func (pc *PacketSock) fillIPHdr(hdr []byte, payloadLen uint16) {
+func (pc *PacketSockCon) fillIPHdr(hdr []byte, payloadLen uint16) {
 	// version + IHL
 	hdr[0] = ip4Ver | (minIPHdrLen / 4)
 	// total length
@@ -187,7 +218,7 @@ func (pc *PacketSock) fillIPHdr(hdr []byte, payloadLen uint16) {
 	chksum(hdr[0:], hdr[10:12])
 }
 
-func (pc *PacketSock) fillUDPHdr(hdr []byte, payloadLen uint16) {
+func (pc *PacketSockCon) fillUDPHdr(hdr []byte, payloadLen uint16) {
 	// src port
 	binary.BigEndian.PutUint16(hdr[0:2], uint16(pc.laddr.Port))
 	// dest port
@@ -198,10 +229,11 @@ func (pc *PacketSock) fillUDPHdr(hdr []byte, payloadLen uint16) {
 
 func (pc *PacketSock) Dialer() func(*net.UDPAddr, *net.UDPAddr) (connections.UDPConn, error) {
 	return func(l *net.UDPAddr, r *net.UDPAddr) (connections.UDPConn, error) {
+
 		//Build a new packet socket with the current connection and return it?
-		npc := PacketSock{
-			fd:       pc.fd,
-			ifindex:  pc.ifindex,
+		npc := PacketSockCon{
+			fd:       &pc.fd,
+			ifindex:  &pc.ifindex,
 			laddr:    l,
 			raddr:    r,
 			randFunc: pc.randFunc,
@@ -214,21 +246,12 @@ func (pc *PacketSock) Dialer() func(*net.UDPAddr, *net.UDPAddr) (connections.UDP
 func (pc *PacketSock) Listener() func(*net.UDPAddr) (connections.UDPConn, error) {
 	return func(l *net.UDPAddr) (connections.UDPConn, error) {
 
-		npc := PacketSock{
-			fd:       pc.fd,
-			ifindex:  pc.ifindex,
+		npc := PacketSockCon{
+			fd:       &pc.fd,
+			ifindex:  &pc.ifindex,
 			laddr:    l,
 			raddr:    &net.UDPAddr{IP: net.IPv4bcast, Port: 67},
 			randFunc: pc.randFunc,
-		}
-
-		addr := unix.SockaddrLinklayer{
-			Ifindex:  npc.ifindex,
-			Protocol: swap16(unix.ETH_P_IP),
-		}
-
-		if err := unix.Bind(npc.fd, &addr); err != nil {
-			return nil, err
 		}
 
 		return &npc, nil
