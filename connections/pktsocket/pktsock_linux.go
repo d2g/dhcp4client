@@ -167,9 +167,10 @@ func (pc *PacketSockCon) ReadFrom(b []byte) (int, *net.UDPAddr, error) {
 	ihl := int(pkt[0]&0x0F) * 4
 
 	// Source IP address
-	// TODO: Add Source PORT
+	x, _ := binary.Varint(pkt[ihl+2 : ihl+4])
 	src := net.UDPAddr{
-		IP: net.IPv4(pkt[12], pkt[13], pkt[14], pkt[15]),
+		IP:   net.IPv4(pkt[12], pkt[13], pkt[14], pkt[15]),
+		Port: int(x),
 	}
 
 	// TODO is there a better way of doing this without a copy?

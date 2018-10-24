@@ -76,10 +76,13 @@ func Test_ExampleLinuxClient(test *testing.T) {
 	} else {
 		test.Logf("IP Received:%v\n", acknowledgementpacket.YIAddr().String())
 		test.Logf("Bootstrap or DHCP Server:%v\n", acknowledgementpacket.SIAddr().String())
-		// Modify the ackpackage to set the correct server address.
-		acknowledgementpacket.SetSIAddr(src.IP)
 		test.Logf("Hardware Addr is:%v\n", acknowledgementpacket.CHAddr())
 	}
+
+	exampleClient.SetLaddr(&net.UDPAddr{
+		IP:   acknowledgementpacket.YIAddr(),
+		Port: 68,
+	})
 
 	test.Log("Start Renewing Lease")
 	success, renewpacket, err := exampleClient.Renew(*src, acknowledgementpacket)

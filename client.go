@@ -172,6 +172,11 @@ func GenerateXID(g func([]byte)) func(*Client) error {
 	}
 }
 
+// SetLocalAddrs
+func (c *Client) SetLaddr(l *net.UDPAddr) {
+	c.laddr = *l
+}
+
 //Close Connections
 func (c *Client) Close() error {
 	//For later use for informing the connections.transport to close any pooling.
