@@ -3,6 +3,7 @@ package dhcp4client
 import (
 	"bytes"
 	"errors"
+	"log"
 	"net"
 	"strconv"
 	"syscall"
@@ -298,6 +299,8 @@ func (c *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, 
 			return dhcp4.Packet{}, source, err
 		}
 
+		log.Printf("%v", readBuffer)
+
 		acknowledgementPacket := dhcp4.Packet(readBuffer)
 		acknowledgementPacketOptions := acknowledgementPacket.ParseOptions()
 
@@ -307,6 +310,7 @@ func (c *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, 
 		}
 
 		if !bytes.Equal(requestPacket.XId(), acknowledgementPacket.XId()) || len(acknowledgementPacketOptions[dhcp4.OptionDHCPMessageType]) < 1 || (dhcp4.MessageType(acknowledgementPacketOptions[dhcp4.OptionDHCPMessageType][0]) != dhcp4.ACK && dhcp4.MessageType(acknowledgementPacketOptions[dhcp4.OptionDHCPMessageType][0]) != dhcp4.NAK) {
+			log.Println("HERE")
 			continue
 		}
 
@@ -337,7 +341,14 @@ func (c *Client) BroadcastPacket(packet dhcp4.Packet) (i int, err error) {
 	return
 }
 
-func (c *Client) UnicastPacket(dhcpAddr net.UDPAddr, packet dhcp4.Packet) (i int, err error) {
+func (c *Client) UnicastPacket(p dhcp4.Packet) (i int, err error) {
+
+	opt := p.ParseOptions()
+	dhcpAddr := net.UDPAddr{
+		IP:   opt[dhcp4.OptionServerIdentifier],
+		Port: 67,
+	}
+
 	con, err := c.connection.Dial(&c.laddr, &dhcpAddr)
 	if err != nil {
 		return
@@ -346,7 +357,7 @@ func (c *Client) UnicastPacket(dhcpAddr net.UDPAddr, packet dhcp4.Packet) (i int
 
 	con.SetWriteDeadline(time.Now().Add(c.timeout))
 
-	i, err = con.Write(packet)
+	i, err = con.Write(p)
 	return
 }
 
@@ -389,17 +400,14 @@ func (c *Client) RenewalRequestPacket(acknowledgement *dhcp4.Packet) dhcp4.Packe
 	messageid := make([]byte, 4)
 	c.generateXID(messageid)
 
-	acknowledgementOptions := acknowledgement.ParseOptions()
-
 	packet := dhcp4.NewPacket(dhcp4.BootRequest)
-	packet.SetCHAddr(acknowledgement.CHAddr())
-
 	packet.SetXId(messageid)
+
+	packet.SetCHAddr(acknowledgement.CHAddr())
 	packet.SetCIAddr(acknowledgement.YIAddr())
 
 	packet.SetBroadcast(false)
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Request)})
-	packet.AddOption(dhcp4.OptionServerIdentifier, acknowledgementOptions[dhcp4.OptionServerIdentifier])
 
 	return packet
 }
@@ -475,12 +483,12 @@ func (c *Client) Request() (bool, *net.UDPAddr, dhcp4.Packet, error) {
 
 //Renew a lease backed on the Acknowledgement Packet.
 //Returns Sucessfull, The AcknoledgementPacket, Any Errors
-//The ack packet doesn't include the correct details for the DHCP server (Needs reconsidering)
-func (c *Client) Renew(dhcpserver net.UDPAddr, acknowledgement dhcp4.Packet) (bool, dhcp4.Packet, error) {
+//TODO: ACK packet doesn't have to contain the server identifier. https://tools.ietf.org/html/rfc2132#section-9.7
+func (c *Client) Renew(dhcpaddr net.UDPAddr, acknowledgement dhcp4.Packet) (bool, dhcp4.Packet, error) {
 	renewRequest := c.RenewalRequestPacket(&acknowledgement)
 	renewRequest.PadToMinSize()
 
-	_, err := c.UnicastPacket(dhcpserver, renewRequest)
+	_, err := c.UnicastPacket(renewRequest)
 	if err != nil {
 		return false, renewRequest, err
 	}
@@ -504,6 +512,7 @@ func (c *Client) Release(dhcpaddr net.UDPAddr, acknowledgement dhcp4.Packet) err
 	release := c.ReleasePacket(&acknowledgement)
 	release.PadToMinSize()
 
-	_, err := c.UnicastPacket(dhcpaddr, release)
+	//_, err := c.UnicastPacket(dhcpaddr, release)
+	_, err := c.UnicastPacket(release)
 	return err
 }

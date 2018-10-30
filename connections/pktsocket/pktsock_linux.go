@@ -105,10 +105,6 @@ func RandFunc(f func(p []byte) (n int, err error)) func(*PacketSock) error {
 	}
 }
 
-func (pc *PacketSock) Close() error {
-	return unix.Close(pc.fd)
-}
-
 func (ps *PacketSock) NewCon(l *net.UDPAddr, r *net.UDPAddr) *PacketSockCon {
 
 	c := &PacketSockCon{
@@ -120,6 +116,10 @@ func (ps *PacketSock) NewCon(l *net.UDPAddr, r *net.UDPAddr) *PacketSockCon {
 	}
 
 	return c
+}
+
+func (pc *PacketSock) Close() error {
+	return unix.Close(pc.fd)
 }
 
 func (pc *PacketSockCon) LocalAddr() *net.UDPAddr {
@@ -142,8 +142,8 @@ func (pc *PacketSockCon) Write(packet []byte) (int, error) {
 		Protocol: swap16(unix.ETH_P_IP),
 		Halen:    uint8(len(bcastMAC)),
 	}
-	copy(lladdr.Addr[:], bcastMAC)
 
+	copy(lladdr.Addr[:], pc.raddr.IP)
 	pkt := make([]byte, minIPHdrLen+udpHdrLen+len(packet))
 
 	pc.fillIPHdr(pkt[0:minIPHdrLen], udpHdrLen+uint16(len(packet)))
@@ -232,30 +232,13 @@ func (pc *PacketSock) Dialer() func(*net.UDPAddr, *net.UDPAddr) (connections.UDP
 	return func(l *net.UDPAddr, r *net.UDPAddr) (connections.UDPConn, error) {
 
 		//Build a new packet socket with the current connection and return it?
-		npc := PacketSockCon{
-			fd:       &pc.fd,
-			ifindex:  &pc.ifindex,
-			laddr:    l,
-			raddr:    r,
-			randFunc: pc.randFunc,
-		}
-
-		return &npc, nil
+		return pc.NewCon(l, r), nil
 	}
 }
 
 func (pc *PacketSock) Listener() func(*net.UDPAddr) (connections.UDPConn, error) {
 	return func(l *net.UDPAddr) (connections.UDPConn, error) {
-
-		npc := PacketSockCon{
-			fd:       &pc.fd,
-			ifindex:  &pc.ifindex,
-			laddr:    l,
-			raddr:    &net.UDPAddr{IP: net.IPv4bcast, Port: 67},
-			randFunc: pc.randFunc,
-		}
-
-		return &npc, nil
+		return pc.NewCon(l, r), nil
 	}
 }
 

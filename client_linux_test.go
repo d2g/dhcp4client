@@ -22,7 +22,7 @@ func Test_ExampleLinuxClient(test *testing.T) {
 	//Create a connection to use
 	c, err := pktsocket.NewPacketSock(2)
 	if err != nil {
-		test.Error("Client Connection Generation:" + err.Error())
+		test.Fatalf("Client Connection Generation:%s\n", err.Error())
 	}
 	defer c.Close()
 
