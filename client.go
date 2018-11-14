@@ -1,8 +1,11 @@
 package dhcp4client
 
 import (
+	"hash/fnv"
+	"math/rand"
 	"net"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/d2g/dhcp4client/connections"
@@ -109,8 +112,7 @@ func New(options ...func(*Client) error) (*Client, error) {
 	d := inetsocket.InetSock{}
 
 	c := Client{
-		timeout:     time.Second * 10,
-		generateXID: CryptoGenerateXID,
+		timeout: time.Second * 10,
 		connection: connections.Transport{
 			Dial:   d.Dialer(),
 			Listen: d.Listener(),
@@ -122,6 +124,26 @@ func New(options ...func(*Client) error) (*Client, error) {
 	err := c.SetOption(options...)
 	if err != nil {
 		return nil, err
+	}
+
+	if c.generateXID == nil {
+		// https://tools.ietf.org/html/rfc2131#section-4.1 explains:
+		//
+		// A DHCP client MUST choose 'xid's in such a way as to minimize the chance
+		// of using an 'xid' identical to one used by another client.
+		//
+		// Hence, seed a random number generator with the current time and hardware
+		// address.
+		h := fnv.New64()
+		h.Write(c.hardwareAddr)
+		seed := int64(h.Sum64()) + time.Now().Unix()
+		rnd := rand.New(rand.NewSource(seed))
+		var rndMu sync.Mutex
+		c.generateXID = func(b []byte) {
+			rndMu.Lock()
+			defer rndMu.Unlock()
+			rnd.Read(b)
+		}
 	}
 
 	//if connection hasn't been set as an option create the default.
