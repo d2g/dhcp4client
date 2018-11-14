@@ -238,7 +238,7 @@ func (pc *PacketSock) Dialer() func(*net.UDPAddr, *net.UDPAddr) (connections.UDP
 
 func (pc *PacketSock) Listener() func(*net.UDPAddr) (connections.UDPConn, error) {
 	return func(l *net.UDPAddr) (connections.UDPConn, error) {
-		return pc.NewCon(l, r), nil
+		return pc.NewCon(l, &net.UDPAddr{IP: net.IPv4bcast, Port: 67}), nil
 	}
 }
 
