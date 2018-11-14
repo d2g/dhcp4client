@@ -1,7 +1,6 @@
 package inetsocket
 
 import (
-	"log"
 	"net"
 
 	"github.com/d2g/dhcp4client/connections"
@@ -13,9 +12,6 @@ type InetSock struct {
 
 func (is *InetSock) Dialer() func(*net.UDPAddr, *net.UDPAddr) (connections.UDPConn, error) {
 	return func(l *net.UDPAddr, r *net.UDPAddr) (connections.UDPConn, error) {
-		log.Printf("l:%v\n", l)
-		log.Printf("r:%v\n", r)
-
 		u, err := net.DialUDP("udp", l, r)
 		if err != nil {
 			return nil, err

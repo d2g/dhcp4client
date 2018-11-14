@@ -3,10 +3,9 @@ package dhcp4client_test
 import (
 	"net"
 	"testing"
-	"time"
 
-	"github.com/d2g/dhcp4"
 	"github.com/d2g/dhcp4client"
+	"github.com/krolaw/dhcp4"
 )
 
 //Example Client
@@ -25,7 +24,7 @@ func Test_ExampleClient(test *testing.T) {
 	}
 	defer exampleClient.Close()
 
-	success, srv, acknowledgementpacket, err := exampleClient.Request()
+	success, acknowledgementpacket, err := exampleClient.Request()
 	test.Logf("Success:%v\n", success)
 	test.Logf("Packet:%v\n", acknowledgementpacket)
 
@@ -47,25 +46,21 @@ func Test_ExampleClient(test *testing.T) {
 	acknowledgementOptions := acknowledgementpacket.ParseOptions()
 	test.Logf("Option 54:%v\n", acknowledgementOptions[dhcp4.OptionServerIdentifier])
 
-	time.Sleep(10)
-
 	test.Log("Start Renewing Lease")
 	exampleClient.SetLaddr(&net.UDPAddr{
 		IP:   acknowledgementpacket.YIAddr(),
 		Port: 68,
 	})
 
-	test.Logf("Server %s\n", srv)
-
-	success, acknowledgementpacket, err = exampleClient.Renew(*srv, acknowledgementpacket)
-	if err != nil {
-		networkError, ok := err.(*net.OpError)
-		if ok && networkError.Timeout() {
-			test.Log("Renewal Failed! Because it didn't find the DHCP server very Strange")
-			test.Errorf("Error" + err.Error())
-		}
-		test.Fatalf("Error:%v\n", err)
-	}
+	//success, acknowledgementpacket, err = exampleClient.Renew(*srv, acknowledgementpacket)
+	//if err != nil {
+	//	networkError, ok := err.(*net.OpError)
+	//		if ok && networkError.Timeout() {
+	//			test.Log("Renewal Failed! Because it didn't find the DHCP server very Strange")
+	//			test.Errorf("Error" + err.Error())
+	//		}
+	//		test.Fatalf("Error:%v\n", err)
+	//	}
 
 	if !success {
 		test.Error("We didn't sucessfully Renew a DHCP Lease?")
@@ -92,16 +87,16 @@ func Test_Renew(test *testing.T) {
 
 	test.Log("Start Renewing Lease")
 	exampleClient.SetLaddr(&net.UDPAddr{
-		IP:   net.IPv4(10, 205, 21, 92),
+		IP:   net.IPv4(10, 162, 222, 167),
 		Port: 68,
 	})
 
 	p := dhcp4.NewPacket(dhcp4.BootRequest)
 	p.SetCHAddr(m)
-	p.SetYIAddr(net.IPv4(10, 205, 21, 92))
-	p.AddOption(dhcp4.OptionServerIdentifier, []byte{10, 210, 31, 214})
+	p.SetYIAddr(net.IPv4(10, 162, 222, 167))
+	p.AddOption(dhcp4.OptionServerIdentifier, net.IPv4(10, 128, 128, 128))
 
-	success, acknowledgementpacket, err := exampleClient.Renew(net.UDPAddr{IP: net.IPv4(10, 210, 31, 214), Port: 67}, p)
+	success, acknowledgementpacket, err := exampleClient.Renew(net.UDPAddr{IP: net.IPv4(10, 128, 128, 128), Port: 67}, p)
 	if err != nil {
 		networkError, ok := err.(*net.OpError)
 		if ok && networkError.Timeout() {
@@ -138,7 +133,7 @@ func Test_ExampleClientWithMathGenerateXID(test *testing.T) {
 	}
 	defer exampleClient.Close()
 
-	success, _, acknowledgementpacket, err := exampleClient.Request()
+	success, acknowledgementpacket, err := exampleClient.Request()
 
 	test.Logf("Success:%v\n", success)
 	test.Logf("Packet:%v\n", acknowledgementpacket)
