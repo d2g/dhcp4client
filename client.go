@@ -114,8 +114,8 @@ func New(options ...func(*Client) error) (*Client, error) {
 	c := Client{
 		timeout: time.Second * 10,
 		connection: connections.Transport{
-			Dial:   d.Dialer(),
-			Listen: d.Listener(),
+			Dialer:   d.Dialer(),
+			Listener: d.Listener(),
 		},
 		laddr:         net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 68},
 		broadcastaddr: net.UDPAddr{IP: net.IPv4bcast, Port: 67},
@@ -272,9 +272,10 @@ func (c *Client) ignoreServer(srcs []net.IP) bool {
 
 //Renew a lease backed on the Acknowledgement Packet.
 //Returns Sucessfull, The AcknoledgementPacket, Any Errors
-//TODO: ACK packet doesn't have to contain the server identifier. https://tools.ietf.org/html/rfc2132#section-9.7
+//BUG(d2g): Which directly contradicts [RFC 2131 p28]
+//BUG(d2g): ACK packet doesn't have to contain the server identifier. https://tools.ietf.org/html/rfc2132#section-9.7
 func (c *Client) Renew(dhcpaddr net.UDPAddr, acknowledgement dhcp4.Packet) (bool, dhcp4.Packet, error) {
-	renewRequest := c.RenewalRequestPacket(&acknowledgement)
+	renewRequest := c.RenewalRequestPacketFromAcknowledgment(&acknowledgement)
 	renewRequest.PadToMinSize()
 
 	_, err := c.UnicastPacket(renewRequest)
@@ -311,7 +312,7 @@ func (c *Client) Request() (bool, dhcp4.Packet, error) {
 		return false, offerPacket, err
 	}
 
-	requestPacket, err := c.SendRequest(&offerPacket)
+	requestPacket, err := c.SendRequestFromOfferPacket(&offerPacket)
 	if err != nil {
 		return false, requestPacket, err
 	}

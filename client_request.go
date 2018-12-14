@@ -1,37 +1,55 @@
 package dhcp4client
 
 import (
+	"net"
+
 	"github.com/krolaw/dhcp4"
 )
 
 //Create Request Packet
-func (c *Client) RequestPacket(offerPacket *dhcp4.Packet) dhcp4.Packet {
-	offerOptions := offerPacket.ParseOptions()
+//r is the IP to request, s is server to request it from
+func (c *Client) RequestPacket(r net.IP, s net.IP) dhcp4.Packet {
+	messageid := make([]byte, 4)
+	c.generateXID(messageid)
 
 	packet := dhcp4.NewPacket(dhcp4.BootRequest)
-	packet.SetCHAddr(c.hardwareAddr)
-
-	//BUG(DG): Shouldn't we generate a new xid?
-	packet.SetXId(offerPacket.XId())
+	packet.SetXId(messageid)
 	packet.SetBroadcast(true)
-
-	packet.SetCIAddr(offerPacket.CIAddr())
-	packet.SetSIAddr(offerPacket.SIAddr())
-
+	packet.SetCHAddr(c.hardwareAddr)
 	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Request)})
-	packet.AddOption(dhcp4.OptionRequestedIPAddress, (offerPacket.YIAddr()).To4())
-	packet.AddOption(dhcp4.OptionServerIdentifier, offerOptions[dhcp4.OptionServerIdentifier])
+
+	//The 'requested IP address' option MUST be set to the value of 'yiaddr' in the DHCPOFFER message from the server.[RFC 2131 p15]
+	packet.AddOption(dhcp4.OptionRequestedIPAddress, r.To4())
+	packet.AddOption(dhcp4.OptionServerIdentifier, s.To4())
 
 	return packet
 }
 
-//Send Request Based On the offer Received.
-func (c *Client) SendRequest(offerPacket *dhcp4.Packet) (dhcp4.Packet, error) {
-	return c.SendRequestWithOptions(offerPacket, nil)
+func (c *Client) RequestPacketWithOptions(r net.IP, s net.IP, opts DHCP4ClientOptions) dhcp4.Packet {
+	packet := c.RequestPacket(r, s)
+
+	for _, opt := range opts[dhcp4.Request] {
+		packet.AddOption(opt.Code, opt.Value)
+	}
+	packet.PadToMinSize()
+
+	return packet
 }
 
-func (c *Client) SendRequestWithOptions(offerPacket *dhcp4.Packet, opts DHCP4ClientOptions) (requestPacket dhcp4.Packet, err error) {
-	requestPacket = c.RequestPacket(offerPacket)
+func (c *Client) RequestPacketFromOfferPacket(offerPacket *dhcp4.Packet) dhcp4.Packet {
+	offerOptions := offerPacket.ParseOptions()
+	packet := c.RequestPacket(offerPacket.YIAddr(), offerOptions[dhcp4.OptionServerIdentifier])
+	packet.PadToMinSize()
+	return packet
+}
+
+//Send Request Based On the offer Received.
+func (c *Client) SendRequestFromOfferPacket(offerPacket *dhcp4.Packet) (dhcp4.Packet, error) {
+	return c.SendRequestFromOfferPacketWithOptions(offerPacket, nil)
+}
+
+func (c *Client) SendRequestFromOfferPacketWithOptions(offerPacket *dhcp4.Packet, opts DHCP4ClientOptions) (requestPacket dhcp4.Packet, err error) {
+	requestPacket = c.RequestPacketFromOfferPacket(offerPacket)
 	for _, opt := range opts[dhcp4.Request] {
 		requestPacket.AddOption(opt.Code, opt.Value)
 	}
@@ -39,24 +57,4 @@ func (c *Client) SendRequestWithOptions(offerPacket *dhcp4.Packet, opts DHCP4Cli
 
 	_, err = c.BroadcastPacket(requestPacket)
 	return
-}
-
-// RenewalRequestPacket Generates Create Request Packet For a Renew
-func (c *Client) RenewalRequestPacket(acknowledgement *dhcp4.Packet) dhcp4.Packet {
-	messageid := make([]byte, 4)
-	c.generateXID(messageid)
-
-	packet := dhcp4.NewPacket(dhcp4.BootRequest)
-	packet.SetXId(messageid)
-
-	packet.SetCHAddr(acknowledgement.CHAddr()) //c.hardwareaddress?
-	packet.SetCIAddr(acknowledgement.YIAddr())
-
-	packet.SetBroadcast(false)
-	packet.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(dhcp4.Request)})
-
-	opts := acknowledgement.ParseOptions()
-	packet.AddOption(dhcp4.OptionServerIdentifier, opts[dhcp4.OptionServerIdentifier])
-
-	return packet
 }

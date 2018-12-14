@@ -13,8 +13,19 @@ import (
 // package itself is responsible for the implementation details.
 // The idea of having transport here is to allow the implementation to manage pooling much like the HTTP transport in the standard lib.
 type Transport struct {
-	Dial   Dialer
-	Listen Listener
+	Dialer   Dialer
+	Listener Listener
+
+	//Used to better support backwards compatibility.
+	Close func() error
+}
+
+func (t *Transport) Dial(l *net.UDPAddr, r *net.UDPAddr) (UDPConn, error) {
+	return t.Dialer(l, r)
+}
+
+func (t *Transport) Listen(l *net.UDPAddr) (UDPConn, error) {
+	return t.Listener(l)
 }
 
 type Dialer func(*net.UDPAddr, *net.UDPAddr) (UDPConn, error)
