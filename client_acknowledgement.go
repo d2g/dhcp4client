@@ -12,6 +12,10 @@ import (
 // Retrieve Acknowledgement
 // Wait for the offer for a specific Request Packet.
 func (c *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, error) {
+	return c.GetAcknowledgementWithOptions(requestPacket, nil)
+}
+
+func (c *Client) GetAcknowledgementWithOptions(requestPacket *dhcp4.Packet, opts DHCP4ClientOptions) (dhcp4.Packet, error) {
 	start := time.Now()
 
 	for {
@@ -45,6 +49,10 @@ func (c *Client) GetAcknowledgement(requestPacket *dhcp4.Packet) (dhcp4.Packet, 
 
 		if !bytes.Equal(requestPacket.XId(), acknowledgementPacket.XId()) || len(acknowledgementPacketOptions[dhcp4.OptionDHCPMessageType]) < 1 || (dhcp4.MessageType(acknowledgementPacketOptions[dhcp4.OptionDHCPMessageType][0]) != dhcp4.ACK && dhcp4.MessageType(acknowledgementPacketOptions[dhcp4.OptionDHCPMessageType][0]) != dhcp4.NAK) {
 			continue
+		}
+
+		for _, opt := range opts[dhcp4.Offer] {
+			opt.Value = acknowledgementPacketOptions[opt.Code]
 		}
 
 		return acknowledgementPacket, nil

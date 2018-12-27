@@ -13,8 +13,12 @@ const (
 )
 
 // Eample Packets used for testing
-// Server IP (OPTION 54) = 10.210.31.214
-// Client IP = 10.205.21.92
+// Server IP (OPTION 54) = 192.168.0.1
+var SERVERIP = net.IP{192, 168, 0, 1}
+
+// Client IP = 192.168.0.3
+var CLIENTIP = net.IP{192, 168, 0, 3}
+
 // Client Hardware Addr = E4-B3-18-64-DC-14
 //1 = OFFER
 //2 = ACK

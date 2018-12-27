@@ -1,6 +1,7 @@
 package dhcp4client
 
 import (
+	"fmt"
 	"hash/fnv"
 	"math/rand"
 	"net"
@@ -83,6 +84,70 @@ func (e *DHCP4Error) Temporary() bool {
 // is so that all options can be GET at any stage of the request lifecycle in a
 // single call to the RequestWithOptions().
 type DHCP4ClientOptions map[dhcp4.MessageType][]*dhcp4.Option
+
+//TODO(d2g): Tidy Up
+func (o DHCP4ClientOptions) String() string {
+
+	//	Discover
+	//	Offer
+	//	Request
+	//	Decline
+	//	ACK
+	//	NAK
+	//	Release
+	//	Inform
+	output := ""
+
+	output += "Discover["
+	for _, v := range o[dhcp4.Discover] {
+		output += fmt.Sprintf("%+v,", v)
+	}
+	output += "],"
+
+	output += "Offer["
+	for _, v := range o[dhcp4.Offer] {
+		output += fmt.Sprintf("%+v,", v)
+	}
+	output += "],"
+
+	output += "Request["
+	for _, v := range o[dhcp4.Request] {
+		output += fmt.Sprintf("%+v,", v)
+	}
+	output += "],"
+
+	output += "Decline["
+	for _, v := range o[dhcp4.Decline] {
+		output += fmt.Sprintf("%+v,", v)
+	}
+	output += "],"
+
+	output += "ACK["
+	for _, v := range o[dhcp4.ACK] {
+		output += fmt.Sprintf("%+v,", v)
+	}
+	output += "],"
+
+	output += "NAK["
+	for _, v := range o[dhcp4.NAK] {
+		output += fmt.Sprintf("%+v,", v)
+	}
+	output += "],"
+
+	output += "Release["
+	for _, v := range o[dhcp4.Release] {
+		output += fmt.Sprintf("%+v,", v)
+	}
+	output += "],"
+
+	output += "Inform["
+	for _, v := range o[dhcp4.Inform] {
+		output += fmt.Sprintf("%+v,", v)
+	}
+	output += "],"
+
+	return output
+}
 
 // The Main DHCP Control Client
 type Client struct {
@@ -318,6 +383,37 @@ func (c *Client) Request() (bool, dhcp4.Packet, error) {
 	}
 
 	acknowledgement, err := c.GetAcknowledgement(&requestPacket)
+	if err != nil {
+		return false, acknowledgement, err
+	}
+
+	acknowledgementOptions := acknowledgement.ParseOptions()
+	if dhcp4.MessageType(acknowledgementOptions[dhcp4.OptionDHCPMessageType][0]) != dhcp4.ACK {
+		return false, acknowledgement, nil
+	}
+
+	return true, acknowledgement, nil
+}
+
+// Full DCHP Call With Client Options
+// The Options Should Contain the requested values and the responded values
+func (c *Client) RequestWithOptions(opts DHCP4ClientOptions) (bool, dhcp4.Packet, error) {
+	discoveryPacket, err := c.SendDiscoverPacketWithOptions(opts)
+	if err != nil {
+		return false, discoveryPacket, err
+	}
+
+	offerPacket, err := c.GetOfferWithOptions(discoveryPacket.XId(), opts)
+	if err != nil {
+		return false, offerPacket, err
+	}
+
+	requestPacket, err := c.SendRequestFromOfferPacketWithOptions(&offerPacket, opts)
+	if err != nil {
+		return false, requestPacket, err
+	}
+
+	acknowledgement, err := c.GetAcknowledgementWithOptions(&requestPacket, opts)
 	if err != nil {
 		return false, acknowledgement, err
 	}
