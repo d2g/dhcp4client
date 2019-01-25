@@ -43,7 +43,7 @@ func (c *Client) GetAcknowledgementWithOptions(requestPacket *dhcp4.Packet, opts
 
 		// Ignore Servers in my Ignore list
 		//BUG(d2g): Should Use the Server Identifier Option
-		if c.ignoreServer([]net.IP{source.IP}) {
+		if !c.tolerateServer([]net.IP{source.IP}) {
 			continue
 		}
 

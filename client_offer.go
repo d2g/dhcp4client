@@ -47,8 +47,7 @@ func (c *Client) GetOfferWithOptions(xid []byte, opts DHCP4ClientOptions) (dhcp4
 		offerPacket := dhcp4.Packet(readBuffer)
 		offerPacketOptions := offerPacket.ParseOptions()
 
-		// Ignore Servers in my Ignore list
-		if c.ignoreServer([]net.IP{offerPacketOptions[dhcp4.OptionServerIdentifier]}) {
+		if !c.tolerateServer([]net.IP{offerPacketOptions[dhcp4.OptionServerIdentifier]}) {
 			continue
 		}
 

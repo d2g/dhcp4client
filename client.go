@@ -3,6 +3,7 @@ package dhcp4client
 import (
 	"fmt"
 	"hash/fnv"
+	"log"
 	"math/rand"
 	"net"
 	"strconv"
@@ -149,13 +150,26 @@ func (o DHCP4ClientOptions) String() string {
 	return output
 }
 
+type TolerateModeType int
+
+const (
+	Ignoremode TolerateModeType = 0
+	Permitmode TolerateModeType = 1
+)
+
 // The Main DHCP Control Client
 type Client struct {
 	hardwareAddr net.HardwareAddr //The HardwareAddr to send in the request.
 
 	// List of Servers to Ignore requests from. This is compared against the
 	// dhcp4.OptionServerIdentifier (Code 54) passed back in the response
+	// when tolerateMode is Ignoremode,
 	ignoreServers []net.IP
+
+	//List of Servers to Permit requests from . when tolerateMode is Permitmode
+	permitServers []net.IP
+
+	tolerateMode TolerateModeType //default is Ignoremode
 
 	timeout    time.Duration         //Time before we timeout.
 	connection connections.Transport //Where connections are sourced
@@ -244,6 +258,24 @@ func IgnoreServers(s []net.IP) func(*Client) error {
 	}
 }
 
+// IgnoreServers is a function option that allow you to pass an array s of IP's
+// which the client will permit when the DHCP Server respond with a
+// dhcp4.OptionServerIdentifier (Code 54) in this IP array.
+func PermitServers(s []net.IP) func(*Client) error {
+	return func(c *Client) error {
+		c.permitServers = s
+		return nil
+	}
+}
+
+// set tolerateMode
+func TolerateMode(mode TolerateModeType) func(*Client) error {
+	return func(c *Client) error {
+		c.tolerateMode = mode
+		return nil
+	}
+}
+
 // HardwareAddr is a function option to set the Hardware(MAC) address of the client.
 func HardwareAddr(h net.HardwareAddr) func(*Client) error {
 	return func(c *Client) error {
@@ -321,6 +353,20 @@ func (c *Client) Close() error {
 	return nil
 }
 
+// In IgnoreMode , if any of srcs are in ignoreServers return false , otherwise return false
+// In PermitMode, if any of srcs are in PermitServers , return true, otherwise return false
+func (c *Client) tolerateServer(srcs []net.IP) bool {
+	switch c.tolerateMode {
+	case Ignoremode:
+		return !c.ignoreServer(srcs)
+	case Permitmode:
+		return c.permitServer(srcs)
+	default:
+		log.Println("wrong tolerateMode , do nothing")
+	}
+	return true
+}
+
 // ignoreServer takes an array of IPs and returns true if any of them are in the
 // array of ignoreServers.
 func (c *Client) ignoreServer(srcs []net.IP) bool {
@@ -328,6 +374,20 @@ func (c *Client) ignoreServer(srcs []net.IP) bool {
 		// Ignore Servers in my Ignore list
 		for _, ignoreServer := range c.ignoreServers {
 			if src.Equal(ignoreServer) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// permitServer takes an array of IPs and returns true if any of them are in the
+// array of permitServers.
+func (c *Client) permitServer(srcs []net.IP) bool {
+	for _, src := range srcs {
+		// permit Servers in my Permit list
+		for _, permitServer := range c.permitServers {
+			if src.Equal(permitServer) {
 				return true
 			}
 		}
